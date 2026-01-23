@@ -116,7 +116,7 @@ class AgentMemory(models.Model):
     objects = AgentMemoryManager()
 
     class Meta:
-        app_label = "experimental_model_agent"
+        app_label = "django_model_agent"
         verbose_name = "Agent Memory"
         verbose_name_plural = "Agent Memories"
         unique_together = [["content_type", "object_id"]]

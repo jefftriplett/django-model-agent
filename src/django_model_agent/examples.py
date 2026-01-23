@@ -1,5 +1,5 @@
 """
-Example implementations of ModelAgent for the LFK.im project.
+Example implementations of ModelAgent.
 
 These examples show how to create agents bound to Django models,
 demonstrating various features like field sets, tools, and memory.
@@ -317,8 +317,8 @@ class PlaceAgent(ModelAgent):
     }
 
     base_prompt: ClassVar[str] = """
-You are a helpful assistant that manages restaurant and business information for LFK.im,
-a local directory for Lawrence, Kansas.
+You are a helpful assistant that manages restaurant and business information
+for a local directory.
 
 Your primary responsibilities:
 1. Answer questions about place information accurately using the available data

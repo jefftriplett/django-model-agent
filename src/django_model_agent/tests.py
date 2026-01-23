@@ -1,7 +1,7 @@
 """
-Tests for the ModelAgent experimental module.
+Tests for the ModelAgent module.
 
-Run with: just test experimental/model_agent/tests.py -v
+Run with: pytest src/django_model_agent/tests.py -v
 """
 
 from __future__ import annotations

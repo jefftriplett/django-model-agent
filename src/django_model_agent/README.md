@@ -1,6 +1,6 @@
 # ModelAgent - Django Ninja-style Abstraction for Pydantic AI
 
-This experimental module provides a declarative way to bind Django models to Pydantic AI Agents,
+This module provides a declarative way to bind Django models to Pydantic AI Agents,
 inspired by Django Ninja's `ModelSchema` pattern.
 
 ## Concept
@@ -18,7 +18,7 @@ Pydantic AI  = execution engine
 ## Quick Start
 
 ```python
-from experimental.model_agent import ModelAgent, ModelTool
+from django_model_agent import ModelAgent, ModelTool
 
 
 class RestaurantAgent(ModelAgent):

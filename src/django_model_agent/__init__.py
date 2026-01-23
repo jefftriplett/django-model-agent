@@ -10,4 +10,4 @@ __all__ = [
 
 # AgentMemory is available but must be imported explicitly
 # to avoid triggering Django model registration:
-# from experimental.model_agent.memory import AgentMemory
+# from django_model_agent.memory import AgentMemory
