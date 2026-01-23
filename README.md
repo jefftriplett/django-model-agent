@@ -8,14 +8,28 @@ This library provides a declarative way to create AI agents that understand and 
 
 ## Installation
 
+This package is not yet published on PyPI. Install directly from GitHub:
+
 ```bash
-pip install django-model-agent
+uv add git+https://github.com/jefftriplett/django-model-agent
 ```
 
-Or with uv:
+Or with pip:
+
+```bash
+pip install git+https://github.com/jefftriplett/django-model-agent
+```
+
+Once published on PyPI:
 
 ```bash
 uv add django-model-agent
+```
+
+Or with pip:
+
+```bash
+pip install django-model-agent
 ```
 
 ## Quick Start
