@@ -1,5 +1,5 @@
 [project]
-name = "django-model-agent-git"
+name = "django-model-agent"
 version = "2026.1.1"
 description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
 readme = "README.md"

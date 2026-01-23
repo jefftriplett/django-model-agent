@@ -44,7 +44,7 @@ wheels = [
 ]
 
 [[package]]
-name = "django-model-agent-git"
+name = "django-model-agent"
 version = "2026.1.1"
 source = { virtual = "." }
 dependencies = [
