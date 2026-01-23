@@ -96,16 +96,28 @@ result = await agent.run("Are you open on Christmas Day?")
 ## Creating Tools
 
 ```python
-from django_model_agent import ModelTool
+from django_model_agent.tools import UpdateTool, ToolResult
 
-class UpdateHoursTool(ModelTool):
+class UpdateHoursTool(UpdateTool):
     name = "update_hours"
     description = "Update the operating hours"
 
-    def run(self, context, new_hours: str) -> str:
-        context.instance.hours = new_hours
-        context.instance.save()
-        return f"Hours updated to: {new_hours}"
+    def update(self, *, new_hours: str) -> None:
+        self.instance.hours = new_hours
+        # save() is called automatically by UpdateTool
+```
+
+Or for read-only tools:
+
+```python
+from django_model_agent.tools import ReadOnlyTool
+
+class GetHoursTool(ReadOnlyTool):
+    name = "get_hours"
+    description = "Get the current operating hours"
+
+    def read(self, **kwargs) -> dict:
+        return {"hours": self.instance.hours}
 ```
 
 ## License
