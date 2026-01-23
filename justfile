@@ -31,4 +31,4 @@ set dotenv-load := false
 
 # Run pytest test suite (accepts optional arguments like path or test name)
 @test *ARGS:
-    uv run --extra dev pytest {{ ARGS }}
+    uv run --group dev pytest {{ ARGS }}

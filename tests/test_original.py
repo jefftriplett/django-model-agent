@@ -1,7 +1,7 @@
 """
-Tests for the ModelAgent module.
+Tests for the ModelAgent module (original tests from LFK project).
 
-Run with: pytest src/django_model_agent/tests.py -v
+Run with: pytest tests/test_original.py -v
 """
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from places.models import Place
+from tests.models import Place
 
-# Import base and tools directly, avoid importing memory model at module level
-from .base import ModelAgent, ModelAgentContext
-from .tools import (
+from django_model_agent import ModelAgent
+from django_model_agent.base import ModelAgentContext
+from django_model_agent.tools import (
     DiffAwareUpdateTool,
     ModelTool,
     ProposedChange,
@@ -292,7 +292,7 @@ class TestModelAgentDecorators:
 
     def test_combined_class_and_decorator_tools(self, place):
         """Test combining class-level tools with decorated tools."""
-        from .tools import ReadOnlyTool
+        from django_model_agent.tools import ReadOnlyTool
 
         class ClassTool(ReadOnlyTool):
             name = "class_tool"
@@ -728,7 +728,7 @@ class TestPlaceAgentExamples:
 
     def test_place_agent_initialization(self, place):
         """Test PlaceAgent can be initialized."""
-        from .examples import PlaceAgent
+        from django_model_agent.examples import PlaceAgent
 
         agent = PlaceAgent(place)
 
@@ -737,7 +737,7 @@ class TestPlaceAgentExamples:
 
     def test_place_agent_field_sets(self, place):
         """Test PlaceAgent field sets."""
-        from .examples import PlaceAgent
+        from django_model_agent.examples import PlaceAgent
 
         public_agent = PlaceAgent(place, field_set="public")
         staff_agent = PlaceAgent(place, field_set="staff")
@@ -751,7 +751,7 @@ class TestPlaceAgentExamples:
 
     def test_place_agent_system_prompt(self, place):
         """Test PlaceAgent enhanced system prompt."""
-        from .examples import PlaceAgent
+        from django_model_agent.examples import PlaceAgent
 
         agent = PlaceAgent(place)
         prompt = agent.get_system_prompt()
@@ -761,7 +761,7 @@ class TestPlaceAgentExamples:
 
     def test_get_place_info_tool(self, place):
         """Test GetPlaceInfoTool."""
-        from .examples import GetPlaceInfoTool, PlaceAgent
+        from django_model_agent.examples import GetPlaceInfoTool, PlaceAgent
 
         agent = PlaceAgent(place)
         tool = GetPlaceInfoTool(agent.context)
@@ -774,7 +774,7 @@ class TestPlaceAgentExamples:
 
     def test_get_delivery_options_tool(self, place):
         """Test GetDeliveryOptionsTool."""
-        from .examples import GetDeliveryOptionsTool, PlaceAgent
+        from django_model_agent.examples import GetDeliveryOptionsTool, PlaceAgent
 
         agent = PlaceAgent(place)
         tool = GetDeliveryOptionsTool(agent.context)
@@ -786,7 +786,7 @@ class TestPlaceAgentExamples:
 
     def test_update_description_tool(self, place):
         """Test UpdateDescriptionTool."""
-        from .examples import PlaceAgent, UpdateDescriptionTool
+        from django_model_agent.examples import PlaceAgent, UpdateDescriptionTool
 
         agent = PlaceAgent(place)
         tool = UpdateDescriptionTool(agent.context)
@@ -798,7 +798,7 @@ class TestPlaceAgentExamples:
 
     def test_update_description_tool_state_check(self, db):
         """Test UpdateDescriptionTool respects state restrictions."""
-        from .examples import PlaceAgent, UpdateDescriptionTool
+        from django_model_agent.examples import PlaceAgent, UpdateDescriptionTool
 
         # Create a closed place
         closed_place = Place.objects.create(
@@ -817,7 +817,7 @@ class TestPlaceAgentExamples:
 
     def test_propose_delivery_url_tool(self, place):
         """Test ProposeDeliveryUrlTool."""
-        from .examples import PlaceAgent, ProposeDeliveryUrlTool
+        from django_model_agent.examples import PlaceAgent, ProposeDeliveryUrlTool
 
         agent = PlaceAgent(place)
         tool = ProposeDeliveryUrlTool(agent.context)
@@ -833,7 +833,7 @@ class TestPlaceAgentExamples:
 
     def test_propose_delivery_url_invalid_service(self, place):
         """Test ProposeDeliveryUrlTool with invalid service."""
-        from .examples import PlaceAgent, ProposeDeliveryUrlTool
+        from django_model_agent.examples import PlaceAgent, ProposeDeliveryUrlTool
 
         agent = PlaceAgent(place)
         tool = ProposeDeliveryUrlTool(agent.context)
@@ -847,7 +847,7 @@ class TestPlaceAgentExamples:
 
     def test_change_state_tool(self, draft_place):
         """Test ChangeStateTool."""
-        from .examples import ChangeStateTool, PlaceAgent
+        from django_model_agent.examples import ChangeStateTool, PlaceAgent
 
         agent = PlaceAgent(draft_place)
         tool = ChangeStateTool(agent.context)
@@ -864,7 +864,7 @@ class TestPlaceAgentExamples:
 
     def test_change_state_tool_invalid_transition(self, place):
         """Test ChangeStateTool with invalid transition."""
-        from .examples import ChangeStateTool, PlaceAgent
+        from django_model_agent.examples import ChangeStateTool, PlaceAgent
 
         # Place is already public, can't publish again
         agent = PlaceAgent(place)
@@ -876,7 +876,7 @@ class TestPlaceAgentExamples:
 
     def test_flag_for_review_tool(self, place):
         """Test FlagForReviewTool."""
-        from .examples import FlagForReviewTool, PlaceAgent
+        from django_model_agent.examples import FlagForReviewTool, PlaceAgent
 
         agent = PlaceAgent(place)
         tool = FlagForReviewTool(agent.context)
@@ -899,7 +899,7 @@ class TestAgentMemoryMixin:
 
     def test_mixin_get_memory_context_empty(self, place):
         """Test getting formatted memory context when empty."""
-        from .memory import AgentMemoryMixin
+        from django_model_agent.memory import AgentMemoryMixin
 
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place
@@ -918,7 +918,7 @@ class TestAgentMemoryMixin:
 
     def test_mixin_get_memory_context_with_data(self, place):
         """Test getting formatted memory context with data."""
-        from .memory import AgentMemoryMixin
+        from django_model_agent.memory import AgentMemoryMixin
 
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place

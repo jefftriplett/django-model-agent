@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from places.models import Place
+from tests.models import Place
 
 from .base import ModelAgent
 from .tools import DiffAwareUpdateTool, ModelTool, ReadOnlyTool, ToolResult, UpdateTool
