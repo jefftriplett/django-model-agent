@@ -1,5 +1,7 @@
 # Django Model Agent
 
+> **Note:** This project is experimental and the API will change.
+
 A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents.
 
 This library provides a declarative way to create AI agents that understand and operate on Django model instances, similar to how Django Ninja's ModelSchema provides a declarative way to serialize models.
