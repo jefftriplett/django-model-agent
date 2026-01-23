@@ -26,7 +26,7 @@ class RestaurantAgent(ModelAgent):
 
     fields = ["name", "address", "hours", "neighborhood"]
 
-    base_prompt = """
+    base_system_prompt = """
     You are an assistant that helps reason about restaurant information.
     Use the provided model fields as your source of truth.
     """
@@ -56,7 +56,7 @@ Key attributes:
 - `model`: The Django model class
 - `fields`: List of fields to expose (None = all)
 - `exclude`: Fields to exclude from schema
-- `base_prompt`: Base prompt for the agent (combined with `@system_prompt` decorators)
+- `base_system_prompt`: Base prompt for the agent (combined with `@system_prompt` decorators)
 - `instructions_template`: Path to Django template for dynamic instructions
 - `tools`: List of tool classes available to the agent
 - `field_sets`: Named groups of fields for role-based access
@@ -113,7 +113,7 @@ ModelAgent supports pydantic-ai style decorators for registering prompts, instru
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours"]
-    base_prompt = "Base system prompt."  # Optional class attribute
+    base_system_prompt = "Base system prompt."  # Optional class attribute
 
     @ModelAgent.system_prompt
     def dynamic_context(self) -> str:
@@ -150,7 +150,7 @@ Multiple decorated methods of the same type are combined:
 
 ```python
 class Agent(ModelAgent):
-    base_prompt = "Base prompt."
+    base_system_prompt = "Base prompt."
 
     @ModelAgent.system_prompt
     def context_1(self) -> str:

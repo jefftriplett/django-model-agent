@@ -146,7 +146,7 @@ class TestModelAgentDecorators:
         class DecoratedAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            base_prompt = "Base prompt."
+            base_system_prompt = "Base prompt."
 
             @ModelAgent.system_prompt
             def dynamic_prompt(self) -> str:

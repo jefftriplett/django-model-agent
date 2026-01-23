@@ -316,7 +316,7 @@ class PlaceAgent(ModelAgent):
         "admin": None,  # All fields
     }
 
-    base_prompt: ClassVar[str] = """
+    base_system_prompt: ClassVar[str] = """
 You are a helpful assistant that manages restaurant and business information
 for a local directory.
 
@@ -355,7 +355,7 @@ Current place state affects what actions are available:
 
     def get_system_prompt(self) -> str:
         """Enhance system prompt with current place context."""
-        base_prompt = super().get_system_prompt()
+        base_system_prompt = super().get_system_prompt()
 
         # Add current state context
         state_info = f"\n\nCurrent place: {self.instance.name}"
@@ -364,7 +364,7 @@ Current place state affects what actions are available:
         if self.instance.neighborhood:
             state_info += f"\nNeighborhood: {self.instance.neighborhood}"
 
-        return base_prompt + state_info
+        return base_system_prompt + state_info
 
 
 # -----------------------------------------------------------------------------
@@ -380,7 +380,7 @@ class PlaceReviewerAgent(PlaceAgent):
     useful in multi-agent workflows where one agent proposes and another approves.
     """
 
-    base_prompt: ClassVar[str] = """
+    base_system_prompt: ClassVar[str] = """
 You are a careful reviewer of proposed changes to place records.
 
 Your job is to:
@@ -406,7 +406,7 @@ class PlaceDataEntryAgent(PlaceAgent):
     Has access to update tools but not state-changing tools.
     """
 
-    base_prompt: ClassVar[str] = """
+    base_system_prompt: ClassVar[str] = """
 You are a data entry assistant helping to populate place records.
 
 Your job is to:

@@ -27,7 +27,7 @@ class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours", "neighborhood"]
 
-    base_prompt = '''
+    base_system_prompt = '''
     You are an assistant that helps reason about restaurant information.
     Use the provided model fields as your source of truth.
     '''
@@ -80,7 +80,7 @@ result = await agent.run("Are you open on Christmas Day?")
 | `model` | The Django model class this agent operates on |
 | `fields` | List of field names to expose to the agent (None = all fields) |
 | `exclude` | List of field names to exclude from the schema |
-| `base_prompt` | Base system prompt for the agent |
+| `base_system_prompt` | Base system prompt for the agent |
 | `instructions_template` | Path to a Django template for instructions |
 | `tools` | List of tool classes available to the agent |
 | `field_sets` | Named groups of fields for role-based exposure |

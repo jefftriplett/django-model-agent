@@ -67,7 +67,7 @@ def simple_agent_class():
     class SimpleAgent(ModelAgent):
         model = Place
         fields = ["name", "address", "phone"]
-        base_prompt = "You are a test agent."
+        base_system_prompt = "You are a test agent."
 
     return SimpleAgent
 
@@ -82,7 +82,7 @@ def agent_with_field_sets():
             "public": ["name", "address"],
             "staff": ["name", "address", "phone", "notes"],
         }
-        base_prompt = "Agent with field sets."
+        base_system_prompt = "Agent with field sets."
 
     return FieldSetAgent
 
@@ -213,7 +213,7 @@ class TestModelAgentDecorators:
         class DecoratedAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            base_prompt = "Base prompt."
+            base_system_prompt = "Base prompt."
 
             @ModelAgent.system_prompt
             def dynamic_prompt(self) -> str:
@@ -317,13 +317,13 @@ class TestModelAgentDecorators:
         # Should have both the class tool and the decorated tool
         assert len(tools) == 2
 
-    def test_decorator_with_no_base_prompt(self, place):
-        """Test that decorators work without class-level base_prompt."""
+    def test_decorator_with_no_base_system_prompt(self, place):
+        """Test that decorators work without class-level base_system_prompt."""
 
         class NoBasePromptAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            # No base_prompt class attribute
+            # No base_system_prompt class attribute
 
             @ModelAgent.system_prompt
             def only_prompt(self) -> str:
@@ -904,7 +904,7 @@ class TestAgentMemoryMixin:
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place
             fields = ["name"]
-            base_prompt = "Test"
+            base_system_prompt = "Test"
 
         agent = MemoryAgent(place)
 
@@ -923,7 +923,7 @@ class TestAgentMemoryMixin:
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place
             fields = ["name"]
-            base_prompt = "Test"
+            base_system_prompt = "Test"
 
         agent = MemoryAgent(place)
 

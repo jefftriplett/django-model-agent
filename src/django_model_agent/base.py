@@ -10,7 +10,7 @@ Example using class attributes:
         model = Restaurant
         fields = ["name", "address", "hours", "neighborhood"]
 
-        base_prompt = '''
+        base_system_prompt = '''
         You are an assistant that helps reason about restaurant information.
         Use the provided model fields as your source of truth.
         '''
@@ -86,7 +86,7 @@ class ModelAgent:
         model: The Django model class this agent operates on
         fields: List of field names to expose to the agent (None = all fields)
         exclude: List of field names to exclude from the schema
-        base_prompt: Base system prompt for the agent (combined with @system_prompt decorators)
+        base_system_prompt: Base system prompt for the agent (combined with @system_prompt decorators)
         instructions_template: Path to a Django/Jinja template for instructions
         tools: List of tool classes available to the agent
         field_sets: Named groups of fields for role-based exposure
@@ -101,7 +101,7 @@ class ModelAgent:
     fields: ClassVar[list[str] | None] = None
     exclude: ClassVar[list[str]] = []
 
-    base_prompt: ClassVar[str] = ""
+    base_system_prompt: ClassVar[str] = ""
     instructions_template: ClassVar[str | None] = None
     tools: ClassVar[Sequence[Any]] = []
 
@@ -118,7 +118,7 @@ class ModelAgent:
 
         The decorated method will be called to generate part of the system prompt.
         Multiple methods can be decorated; their outputs will be combined with
-        the base_prompt class attribute.
+        the base_system_prompt class attribute.
 
         Example:
             @ModelAgent.system_prompt
@@ -334,7 +334,7 @@ class ModelAgent:
         Get the combined system prompt for this agent.
 
         Combines:
-        1. The class-level base_prompt string
+        1. The class-level base_system_prompt string
         2. All @ModelAgent.system_prompt decorated methods
 
         Override this method to customize system prompt generation.
@@ -342,8 +342,8 @@ class ModelAgent:
         parts = []
 
         # Add class-level base prompt if defined
-        if self.base_prompt:
-            parts.append(self.base_prompt.strip())
+        if self.base_system_prompt:
+            parts.append(self.base_system_prompt.strip())
 
         # Add prompts from decorated methods
         for func in self._system_prompt_funcs:
