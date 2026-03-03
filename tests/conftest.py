@@ -49,7 +49,7 @@ def simple_agent_class():
     class SimpleAgent(ModelAgent):
         model = Place
         fields = ["name", "address", "phone"]
-        base_system_prompt = "You are a test agent."
+        _system_prompts = "You are a test agent."
 
     return SimpleAgent
 
@@ -60,10 +60,10 @@ def agent_with_field_sets():
 
     class FieldSetAgent(ModelAgent):
         model = Place
-        field_sets = {
+        _field_sets = {
             "public": ["name", "address"],
             "staff": ["name", "address", "phone", "notes"],
         }
-        base_system_prompt = "Agent with field sets."
+        _system_prompts = "Agent with field sets."
 
     return FieldSetAgent

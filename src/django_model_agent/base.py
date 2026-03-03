@@ -10,7 +10,7 @@ Example using class attributes:
         model = Restaurant
         fields = ["name", "address", "hours", "neighborhood"]
 
-        base_system_prompt = '''
+        _system_prompts = '''
         You are an assistant that helps reason about restaurant information.
         Use the provided model fields as your source of truth.
         '''
@@ -43,13 +43,17 @@ Example using decorators (pydantic-ai style):
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
+from decimal import Decimal
 from functools import wraps
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 from django.db import models
-from django.template import engines
+from django.template import TemplateDoesNotExist, TemplateSyntaxError, engines
 from pydantic import BaseModel, create_model
+
+logger = logging.getLogger(__name__)
 
 
 # Sentinel for marking decorated methods
@@ -86,10 +90,11 @@ class ModelAgent:
         model: The Django model class this agent operates on
         fields: List of field names to expose to the agent (None = all fields)
         exclude: List of field names to exclude from the schema
-        base_system_prompt: Base system prompt for the agent (combined with @system_prompt decorators)
-        instructions_template: Path to a Django/Jinja template for instructions
+        _system_prompts: System prompt string or list of strings (combined with @system_prompt decorators)
+        _instructions: Instructions string or list of strings (combined with @instructions decorators)
+        _instructions_template: Path to a Django/Jinja template for instructions
         tools: List of tool classes available to the agent
-        field_sets: Named groups of fields for role-based exposure
+        _field_sets: Named groups of fields for role-based exposure
 
     Decorators:
         @ModelAgent.system_prompt - Register a method as a system prompt provider
@@ -101,11 +106,12 @@ class ModelAgent:
     fields: ClassVar[list[str] | None] = None
     exclude: ClassVar[list[str]] = []
 
-    base_system_prompt: ClassVar[str] = ""
-    instructions_template: ClassVar[str | None] = None
-    tools: ClassVar[Sequence[Any]] = []
+    _system_prompts: str | list[str] = ""
+    _instructions: str | list[str] = ""
+    _instructions_template: str | None = None
+    tools: Sequence[Any] = []
 
-    field_sets: ClassVar[dict[str, list[str]]] = {}
+    _field_sets: dict[str, list[str]] = {}
 
     # -------------------------------------------------------------------------
     # Decorators for pydantic-ai style registration
@@ -118,7 +124,7 @@ class ModelAgent:
 
         The decorated method will be called to generate part of the system prompt.
         Multiple methods can be decorated; their outputs will be combined with
-        the base_system_prompt class attribute.
+        the _system_prompts class attribute.
 
         Example:
             @ModelAgent.system_prompt
@@ -177,6 +183,8 @@ class ModelAgent:
         self,
         instance: models.Model,
         *,
+        system_prompt: str | list[str] | None = None,
+        instructions: str | list[str] | None = None,
         field_set: str | None = None,
     ) -> None:
         """
@@ -184,12 +192,20 @@ class ModelAgent:
 
         Args:
             instance: The Django model instance to operate on
+            system_prompt: Override or extend the class-level system prompts
+            instructions: Override or extend the class-level instructions
             field_set: Optional name of a field set to use for schema generation
         """
         self.instance = instance
         self.field_set = field_set
         self._schema: type[BaseModel] | None = None
         self._pydantic_agent: Any = None
+
+        # Override class-level prompts/instructions if provided at init
+        if system_prompt is not None:
+            self._system_prompts = system_prompt
+        if instructions is not None:
+            self._instructions = instructions
 
         # Collect decorated methods from the class
         self._system_prompt_funcs: list[Callable] = []
@@ -225,8 +241,8 @@ class ModelAgent:
 
     def _get_active_fields(self) -> list[str] | None:
         """Determine which fields to include based on field_set or fields."""
-        if self.field_set and self.field_set in self.field_sets:
-            return self.field_sets[self.field_set]
+        if self.field_set and self.field_set in self._field_sets:
+            return self._field_sets[self.field_set]
         return self.fields
 
     def _build_schema(self) -> type[BaseModel]:
@@ -269,9 +285,6 @@ class ModelAgent:
         Returns:
             The appropriate Python type (potentially Optional)
         """
-        from typing import Optional
-
-        # Get the base Python type
         try:
             base_type = field.get_internal_type()
             type_mapping = {
@@ -285,18 +298,25 @@ class ModelAgent:
                 "PositiveSmallIntegerField": int,
                 "PositiveBigIntegerField": int,
                 "FloatField": float,
-                "DecimalField": float,
+                "DecimalField": Decimal,
                 "CharField": str,
                 "TextField": str,
                 "EmailField": str,
                 "URLField": str,
                 "SlugField": str,
                 "UUIDField": str,
+                "FilePathField": str,
+                "FileField": str,
+                "ImageField": str,
+                "GenericIPAddressField": str,
+                "IPAddressField": str,
                 "BooleanField": bool,
                 "NullBooleanField": Optional[bool],
                 "DateField": str,  # ISO format strings for AI
                 "DateTimeField": str,
                 "TimeField": str,
+                "DurationField": str,
+                "BinaryField": bytes,
                 "JSONField": dict,
                 "ForeignKey": int,  # Return the ID
             }
@@ -329,21 +349,24 @@ class ModelAgent:
         except AttributeError:
             return ...
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompts(self) -> str:
         """
         Get the combined system prompt for this agent.
 
         Combines:
-        1. The class-level base_system_prompt string
+        1. The class-level _system_prompts (string or list of strings)
         2. All @ModelAgent.system_prompt decorated methods
 
         Override this method to customize system prompt generation.
         """
         parts = []
 
-        # Add class-level base prompt if defined
-        if self.base_system_prompt:
-            parts.append(self.base_system_prompt.strip())
+        # Add class-level prompt(s) if defined
+        if self._system_prompts:
+            if isinstance(self._system_prompts, list):
+                parts.extend(s.strip() for s in self._system_prompts if s)
+            else:
+                parts.append(self._system_prompts.strip())
 
         # Add prompts from decorated methods
         for func in self._system_prompt_funcs:
@@ -358,18 +381,26 @@ class ModelAgent:
         Get the combined instructions for this agent.
 
         Combines:
-        1. Rendered instructions_template (if provided)
-        2. All @ModelAgent.instruction decorated methods
+        1. The class-level _instructions (string or list of strings)
+        2. Rendered instructions_template (if provided)
+        3. All @ModelAgent.instructions decorated methods
 
         Returns:
             Combined instructions string or None
         """
         parts = []
 
+        # Add class-level instructions if defined
+        if self._instructions:
+            if isinstance(self._instructions, list):
+                parts.extend(s.strip() for s in self._instructions if s)
+            else:
+                parts.append(self._instructions.strip())
+
         # Add template-based instructions if defined
-        if self.instructions_template:
+        if self._instructions_template:
             rendered = self._render_template(
-                self.instructions_template,
+                self._instructions_template,
                 context={"instance": self.instance, "schema": self.schema},
             )
             if rendered:
@@ -394,15 +425,15 @@ class ModelAgent:
         Returns:
             List of tool functions/classes
         """
-        all_tools: list[Any] = list(self.tools)
+        alltools: list[Any] = list(self.tools)
 
         # Add decorated tool methods (bound to self)
         for func in self._tool_funcs:
             # Create a bound method
             bound_method = func.__get__(self, self.__class__)
-            all_tools.append(bound_method)
+            alltools.append(bound_method)
 
-        return all_tools
+        return alltools
 
     def _render_template(self, template_name: str, context: dict[str, Any]) -> str:
         """
@@ -413,11 +444,19 @@ class ModelAgent:
             context: Template context dict
 
         Returns:
-            Rendered template string
+            Rendered template string, or empty string if the template
+            is missing or contains syntax errors.
         """
-        engine = engines["django"]
-        template = engine.get_template(template_name)
-        return template.render(context)
+        try:
+            engine = engines["django"]
+            template = engine.get_template(template_name)
+            return template.render(context)
+        except TemplateDoesNotExist:
+            logger.warning("Template not found: %s", template_name)
+            return ""
+        except TemplateSyntaxError:
+            logger.warning("Template syntax error in: %s", template_name)
+            return ""
 
     def get_schema_description(self) -> str:
         """
@@ -461,7 +500,7 @@ class ModelAgent:
         # from pydantic_ai import Agent
         # return Agent(
         #     model=self.schema,
-        #     system_prompt=self.get_system_prompt(),
+        #     system_prompt=self.get_system_prompts(),
         #     instructions=self.get_instructions(),
         #     tools=self.tools,
         # )

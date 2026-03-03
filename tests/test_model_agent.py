@@ -6,12 +6,15 @@ Run with: pytest -v
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
 from tests.models import Place
 
 from django_model_agent import ModelAgent
 from django_model_agent.base import ModelAgentContext
+from django_model_agent.memory import AgentMemory
 from django_model_agent.tools import (
     ModelTool,
     ReadOnlyTool,
@@ -76,11 +79,11 @@ class TestModelAgent:
         assert "phone" in staff_schema.model_fields
         assert "notes" in staff_schema.model_fields
 
-    def test_get_system_prompt(self, place, simple_agent_class):
+    def test_get_system_prompts(self, place, simple_agent_class):
         """Test system prompt retrieval."""
         agent = simple_agent_class(place)
 
-        assert agent.get_system_prompt() == "You are a test agent."
+        assert agent.get_system_prompts() == "You are a test agent."
 
     def test_get_current_values(self, place, simple_agent_class):
         """Test getting current field values."""
@@ -140,25 +143,25 @@ class TestModelAgentContext:
 class TestModelAgentDecorators:
     """Tests for ModelAgent decorator functionality."""
 
-    def test_system_prompt_decorator(self, place):
+    def test_system_prompts_decorator(self, place):
         """Test @ModelAgent.system_prompt decorator."""
 
         class DecoratedAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            base_system_prompt = "Base prompt."
+            _system_prompts = "Base prompt."
 
             @ModelAgent.system_prompt
             def dynamic_prompt(self) -> str:
                 return f"Working with: {self.instance.name}"
 
         agent = DecoratedAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert "Base prompt." in prompt
         assert "Working with: Test Restaurant" in prompt
 
-    def test_multiple_system_prompt_decorators(self, place):
+    def test_multiple_system_prompts_decorators(self, place):
         """Test multiple @ModelAgent.system_prompt decorators."""
 
         class MultiPromptAgent(ModelAgent):
@@ -174,7 +177,7 @@ class TestModelAgentDecorators:
                 return "Second part."
 
         agent = MultiPromptAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert "First part." in prompt
         assert "Second part." in prompt
@@ -292,3 +295,152 @@ class TestUpdateTool:
         assert result.success is True
         place.refresh_from_db()
         assert place.name == "New Name"
+
+
+# -----------------------------------------------------------------------------
+# Template Error Handling Tests
+# -----------------------------------------------------------------------------
+
+
+class TestTemplateErrorHandling:
+    """Tests for template rendering error handling."""
+
+    def test_render_missing_template_returns_empty(self, place, simple_agent_class):
+        """Test that a missing template returns empty string instead of crashing."""
+        agent = simple_agent_class(place)
+        result = agent._render_template("nonexistent/template.html", {"instance": place})
+        assert result == ""
+
+    def test_instructions_with_missing_template(self, place):
+        """Test that get_instructions handles missing template gracefully."""
+
+        class TemplateAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            _instructions_template = "does_not_exist.html"
+
+        agent = TemplateAgent(place)
+        instructions = agent.get_instructions()
+        assert instructions is None or instructions == ""
+
+
+# -----------------------------------------------------------------------------
+# Field Type Mapping Tests
+# -----------------------------------------------------------------------------
+
+
+class TestFieldTypeMapping:
+    """Tests for Django field to Python type mapping."""
+
+    def test_decimal_field_maps_to_decimal(self, place, simple_agent_class):
+        """Test that DecimalField maps to Decimal, not float."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.DecimalField(max_digits=10, decimal_places=2)
+        python_type = agent._get_field_type(field)
+        assert python_type is Decimal
+
+    def test_file_field_maps_to_str(self, place, simple_agent_class):
+        """Test that FileField maps to str."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.FileField()
+        python_type = agent._get_field_type(field)
+        assert python_type is str
+
+    def test_image_field_maps_to_str(self, place, simple_agent_class):
+        """Test that ImageField maps to str."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.ImageField()
+        python_type = agent._get_field_type(field)
+        assert python_type is str
+
+    def test_duration_field_maps_to_str(self, place, simple_agent_class):
+        """Test that DurationField maps to str."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.DurationField()
+        python_type = agent._get_field_type(field)
+        assert python_type is str
+
+    def test_binary_field_maps_to_bytes(self, place, simple_agent_class):
+        """Test that BinaryField maps to bytes."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.BinaryField()
+        python_type = agent._get_field_type(field)
+        assert python_type is bytes
+
+    def test_generic_ip_field_maps_to_str(self, place, simple_agent_class):
+        """Test that GenericIPAddressField maps to str."""
+        agent = simple_agent_class(place)
+        from django.db import models
+
+        field = models.GenericIPAddressField()
+        python_type = agent._get_field_type(field)
+        assert python_type is str
+
+
+# -----------------------------------------------------------------------------
+# AgentMemory Unsaved Instance Tests
+# -----------------------------------------------------------------------------
+
+
+class TestAgentMemoryUnsavedInstance:
+    """Tests for AgentMemory with unsaved model instances."""
+
+    def test_get_for_unsaved_instance_raises(self, db):
+        """Test that get_for raises ValueError for unsaved instance."""
+        unsaved = Place(name="Unsaved", slug="unsaved")
+        with pytest.raises(ValueError, match="unsaved model instance"):
+            AgentMemory.objects.get_for(unsaved)
+
+    def test_get_or_create_for_unsaved_instance_raises(self, db):
+        """Test that get_or_create_for raises ValueError for unsaved instance."""
+        unsaved = Place(name="Unsaved", slug="unsaved")
+        with pytest.raises(ValueError, match="unsaved model instance"):
+            AgentMemory.objects.get_or_create_for(unsaved)
+
+
+# -----------------------------------------------------------------------------
+# URL Validation Tests
+# -----------------------------------------------------------------------------
+
+
+class TestProposeDeliveryUrlValidation:
+    """Tests for URL validation in ProposeDeliveryUrlTool."""
+
+    def test_valid_url_accepted(self, place, simple_agent_class):
+        """Test that a valid URL is accepted."""
+        from django_model_agent.examples import ProposeDeliveryUrlTool
+
+        agent = simple_agent_class(place)
+        tool = ProposeDeliveryUrlTool(agent.context)
+        result = tool.execute(service="doordash", url="https://doordash.com/store/123")
+        assert result.success is True
+
+    def test_invalid_url_rejected(self, place, simple_agent_class):
+        """Test that an invalid URL is rejected."""
+        from django_model_agent.examples import ProposeDeliveryUrlTool
+
+        agent = simple_agent_class(place)
+        tool = ProposeDeliveryUrlTool(agent.context)
+        result = tool.execute(service="doordash", url="not-a-url")
+        assert result.success is False
+        assert "Invalid URL" in result.message
+
+    def test_javascript_url_rejected(self, place, simple_agent_class):
+        """Test that javascript: URLs are rejected."""
+        from django_model_agent.examples import ProposeDeliveryUrlTool
+
+        agent = simple_agent_class(place)
+        tool = ProposeDeliveryUrlTool(agent.context)
+        result = tool.execute(service="doordash", url="javascript:alert(1)")
+        assert result.success is False
+        assert "Invalid URL" in result.message

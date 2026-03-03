@@ -67,7 +67,7 @@ def simple_agent_class():
     class SimpleAgent(ModelAgent):
         model = Place
         fields = ["name", "address", "phone"]
-        base_system_prompt = "You are a test agent."
+        _system_prompts = "You are a test agent."
 
     return SimpleAgent
 
@@ -78,11 +78,11 @@ def agent_with_field_sets():
 
     class FieldSetAgent(ModelAgent):
         model = Place
-        field_sets = {
+        _field_sets = {
             "public": ["name", "address"],
             "staff": ["name", "address", "phone", "notes"],
         }
-        base_system_prompt = "Agent with field sets."
+        _system_prompts = "Agent with field sets."
 
     return FieldSetAgent
 
@@ -143,11 +143,11 @@ class TestModelAgent:
         assert "phone" in staff_schema.model_fields
         assert "notes" in staff_schema.model_fields
 
-    def test_get_system_prompt(self, place, simple_agent_class):
+    def test_get_system_prompts(self, place, simple_agent_class):
         """Test system prompt retrieval."""
         agent = simple_agent_class(place)
 
-        assert agent.get_system_prompt() == "You are a test agent."
+        assert agent.get_system_prompts() == "You are a test agent."
 
     def test_get_current_values(self, place, simple_agent_class):
         """Test getting current field values."""
@@ -207,25 +207,25 @@ class TestModelAgentContext:
 class TestModelAgentDecorators:
     """Tests for ModelAgent decorator functionality."""
 
-    def test_system_prompt_decorator(self, place):
+    def test_system_prompts_decorator(self, place):
         """Test @ModelAgent.system_prompt decorator."""
 
         class DecoratedAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            base_system_prompt = "Base prompt."
+            _system_prompts = "Base prompt."
 
             @ModelAgent.system_prompt
             def dynamic_prompt(self) -> str:
                 return f"Working with: {self.instance.name}"
 
         agent = DecoratedAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert "Base prompt." in prompt
         assert "Working with: Test Restaurant" in prompt
 
-    def test_multiple_system_prompt_decorators(self, place):
+    def test_multiple_system_prompts_decorators(self, place):
         """Test multiple @ModelAgent.system_prompt decorators."""
 
         class MultiPromptAgent(ModelAgent):
@@ -241,7 +241,7 @@ class TestModelAgentDecorators:
                 return "Second part."
 
         agent = MultiPromptAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert "First part." in prompt
         assert "Second part." in prompt
@@ -290,7 +290,7 @@ class TestModelAgentDecorators:
         assert "Test Restaurant" in results
         assert "123 Main St" in results
 
-    def test_combined_class_and_decorator_tools(self, place):
+    def test_combined_class_and_decoratortools(self, place):
         """Test combining class-level tools with decorated tools."""
         from django_model_agent.tools import ReadOnlyTool
 
@@ -317,20 +317,20 @@ class TestModelAgentDecorators:
         # Should have both the class tool and the decorated tool
         assert len(tools) == 2
 
-    def test_decorator_with_no_base_system_prompt(self, place):
-        """Test that decorators work without class-level base_system_prompt."""
+    def test_decorator_with_no__system_prompts(self, place):
+        """Test that decorators work without class-level _system_prompts."""
 
         class NoBasePromptAgent(ModelAgent):
             model = Place
             fields = ["name"]
-            # No base_system_prompt class attribute
+            # No _system_prompts class attribute
 
             @ModelAgent.system_prompt
             def only_prompt(self) -> str:
                 return "The only prompt."
 
         agent = NoBasePromptAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert prompt == "The only prompt."
 
@@ -735,7 +735,7 @@ class TestPlaceAgentExamples:
         assert agent.instance == place
         assert agent.model == Place
 
-    def test_place_agent_field_sets(self, place):
+    def test_place_agent__field_sets(self, place):
         """Test PlaceAgent field sets."""
         from django_model_agent.examples import PlaceAgent
 
@@ -749,12 +749,12 @@ class TestPlaceAgentExamples:
         assert "notes" not in public_schema.model_fields
         assert "notes" in staff_schema.model_fields
 
-    def test_place_agent_system_prompt(self, place):
+    def test_place_agent_system_prompts(self, place):
         """Test PlaceAgent enhanced system prompt."""
         from django_model_agent.examples import PlaceAgent
 
         agent = PlaceAgent(place)
-        prompt = agent.get_system_prompt()
+        prompt = agent.get_system_prompts()
 
         assert "Test Restaurant" in prompt
         assert "public" in prompt  # Current state
@@ -904,7 +904,7 @@ class TestAgentMemoryMixin:
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place
             fields = ["name"]
-            base_system_prompt = "Test"
+            _system_prompts = "Test"
 
         agent = MemoryAgent(place)
 
@@ -923,7 +923,7 @@ class TestAgentMemoryMixin:
         class MemoryAgent(AgentMemoryMixin, ModelAgent):
             model = Place
             fields = ["name"]
-            base_system_prompt = "Test"
+            _system_prompts = "Test"
 
         agent = MemoryAgent(place)
 

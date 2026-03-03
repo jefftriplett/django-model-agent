@@ -39,7 +39,15 @@ class AgentMemoryManager(models.Manager):
 
         Returns:
             AgentMemory instance or None if not found
+
+        Raises:
+            ValueError: If the instance has not been saved (pk is None)
         """
+        if instance.pk is None:
+            raise ValueError(
+                "Cannot get memory for an unsaved model instance (pk is None). "
+                "Save the instance first."
+            )
         content_type = ContentType.objects.get_for_model(instance)
         try:
             return self.get(content_type=content_type, object_id=instance.pk)
@@ -60,7 +68,15 @@ class AgentMemoryManager(models.Manager):
 
         Returns:
             Tuple of (AgentMemory instance, created boolean)
+
+        Raises:
+            ValueError: If the instance has not been saved (pk is None)
         """
+        if instance.pk is None:
+            raise ValueError(
+                "Cannot get or create memory for an unsaved model instance (pk is None). "
+                "Save the instance first."
+            )
         content_type = ContentType.objects.get_for_model(instance)
         return self.get_or_create(
             content_type=content_type,

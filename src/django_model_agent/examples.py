@@ -11,6 +11,9 @@ from typing import Any, ClassVar
 
 from tests.models import Place
 
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+
 from .base import ModelAgent
 from .tools import DiffAwareUpdateTool, ModelTool, ReadOnlyTool, ToolResult, UpdateTool
 
@@ -167,6 +170,15 @@ class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
                 message=f"Unknown service: {service}. Valid services: {', '.join(service_fields.keys())}",
             )
 
+        validator = URLValidator(schemes=["http", "https"])
+        try:
+            validator(url)
+        except ValidationError:
+            return ToolResult(
+                success=False,
+                message=f"Invalid URL: {url}. Must be a valid HTTP or HTTPS URL.",
+            )
+
         field_name = service_fields[service.lower()]
         self.propose_change(field_name, url, reason)
 
@@ -216,7 +228,7 @@ class ChangeStateTool(ModelTool):
                 message=f"State changed from '{old_state}' to '{place.state}'",
                 changes={"state": {"before": old_state, "after": place.state}},
             )
-        except Exception as e:
+        except ValueError as e:
             return ToolResult(
                 success=False,
                 message=f"Cannot perform '{action}' from state '{place.state}': {e}",
@@ -288,7 +300,7 @@ class PlaceAgent(ModelAgent):
         "curbside",
     ]
 
-    field_sets: ClassVar[dict[str, list[str]]] = {
+    _field_sets: ClassVar[dict[str, list[str]]] = {
         "public": [
             "name",
             "address",
@@ -316,7 +328,7 @@ class PlaceAgent(ModelAgent):
         "admin": None,  # All fields
     }
 
-    base_system_prompt: ClassVar[str] = """
+    _system_prompts: ClassVar[str] = """
 You are a helpful assistant that manages restaurant and business information
 for a local directory.
 
@@ -353,9 +365,9 @@ Current place state affects what actions are available:
     def __init__(self, instance: Place, *, field_set: str | None = None) -> None:
         super().__init__(instance, field_set=field_set)
 
-    def get_system_prompt(self) -> str:
+    def get_system_prompts(self) -> str:
         """Enhance system prompt with current place context."""
-        base_system_prompt = super().get_system_prompt()
+        base_prompt = super().get_system_prompts()
 
         # Add current state context
         state_info = f"\n\nCurrent place: {self.instance.name}"
@@ -364,7 +376,7 @@ Current place state affects what actions are available:
         if self.instance.neighborhood:
             state_info += f"\nNeighborhood: {self.instance.neighborhood}"
 
-        return base_system_prompt + state_info
+        return base_prompt + state_info
 
 
 # -----------------------------------------------------------------------------
@@ -380,7 +392,7 @@ class PlaceReviewerAgent(PlaceAgent):
     useful in multi-agent workflows where one agent proposes and another approves.
     """
 
-    base_system_prompt: ClassVar[str] = """
+    _system_prompts: ClassVar[str] = """
 You are a careful reviewer of proposed changes to place records.
 
 Your job is to:
@@ -406,7 +418,7 @@ class PlaceDataEntryAgent(PlaceAgent):
     Has access to update tools but not state-changing tools.
     """
 
-    base_system_prompt: ClassVar[str] = """
+    _system_prompts: ClassVar[str] = """
 You are a data entry assistant helping to populate place records.
 
 Your job is to:
