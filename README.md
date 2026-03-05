@@ -39,14 +39,15 @@ pip install django-model-agent
 ```python
 from django_model_agent import ModelAgent, ModelTool
 
+
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours", "neighborhood"]
 
-    base_system_prompt = '''
+    _system_prompts = """
     You are an assistant that helps reason about restaurant information.
     Use the provided model fields as your source of truth.
-    '''
+    """
 
     tools = [UpdateHoursTool, FlagForReviewTool]
 ```
@@ -68,7 +69,7 @@ class RestaurantAgent(ModelAgent):
 
     @ModelAgent.tool
     def get_hours(self) -> str:
-        '''Get the restaurant hours.'''
+        """Get the restaurant hours."""
         return str(self.instance.hours)
 ```
 
@@ -78,6 +79,13 @@ class RestaurantAgent(ModelAgent):
 restaurant = Restaurant.objects.get(pk=123)
 agent = RestaurantAgent(restaurant)
 result = await agent.run("Are you open on Christmas Day?")
+
+# Override prompts at init time
+agent = RestaurantAgent(
+    restaurant,
+    system_prompt="You are a concise assistant.",
+    instructions="Focus only on hours of operation.",
+)
 ```
 
 ## Features
@@ -96,10 +104,20 @@ result = await agent.run("Are you open on Christmas Day?")
 | `model` | The Django model class this agent operates on |
 | `fields` | List of field names to expose to the agent (None = all fields) |
 | `exclude` | List of field names to exclude from the schema |
-| `base_system_prompt` | Base system prompt for the agent |
-| `instructions_template` | Path to a Django template for instructions |
+| `_system_prompts` | System prompt string or list of strings for the agent |
+| `_instructions` | Instructions string or list of strings for the agent |
+| `_instructions_template` | Path to a Django template for instructions |
 | `tools` | List of tool classes available to the agent |
-| `field_sets` | Named groups of fields for role-based exposure |
+| `_field_sets` | Named groups of fields for role-based exposure |
+
+## Init Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `instance` | The Django model instance to operate on |
+| `system_prompt` | Override or extend the class-level system prompts |
+| `instructions` | Override or extend the class-level instructions |
+| `field_set` | Name of a field set to use for schema generation |
 
 ## Decorators
 
@@ -114,6 +132,7 @@ result = await agent.run("Are you open on Christmas Day?")
 ```python
 from django_model_agent.tools import UpdateTool, ToolResult
 
+
 class UpdateHoursTool(UpdateTool):
     name = "update_hours"
     description = "Update the operating hours"
@@ -127,6 +146,7 @@ Or for read-only tools:
 
 ```python
 from django_model_agent.tools import ReadOnlyTool
+
 
 class GetHoursTool(ReadOnlyTool):
     name = "get_hours"
