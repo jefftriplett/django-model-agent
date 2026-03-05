@@ -57,6 +57,12 @@ The base class that:
 3. Creates a Pydantic AI Agent
 4. Handles loading instances and persisting changes
 
+Init parameters:
+- `instance`: The Django model instance to operate on
+- `system_prompt`: Override or extend the class-level system prompts
+- `instructions`: Override or extend the class-level instructions
+- `field_set`: Name of a field set to use for schema generation
+
 Key attributes:
 - `model`: The Django model class
 - `fields`: List of fields to expose (None = all)

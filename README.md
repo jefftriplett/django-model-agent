@@ -121,6 +121,15 @@ class RunnableRestaurantAgent(RestaurantAgent):
 - **Template support**: Use Django templates for dynamic instructions
 - **Automatic schema generation**: Pydantic schemas are generated from Django models
 
+## Init Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `instance` | The Django model instance to operate on |
+| `system_prompt` | Override or extend the class-level system prompts |
+| `instructions` | Override or extend the class-level instructions |
+| `field_set` | Name of a field set to use for schema generation |
+
 ## Class Attributes
 
 | Attribute | Description |
@@ -133,15 +142,6 @@ class RunnableRestaurantAgent(RestaurantAgent):
 | `_instructions_template` | Path to a Django template for instructions |
 | `tools` | List of tool classes available to the agent |
 | `_field_sets` | Named groups of fields for role-based exposure |
-
-## Init Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `instance` | The Django model instance to operate on |
-| `system_prompt` | Override or extend the class-level system prompts |
-| `instructions` | Override or extend the class-level instructions |
-| `field_set` | Name of a field set to use for schema generation |
 
 ## Decorators
 
