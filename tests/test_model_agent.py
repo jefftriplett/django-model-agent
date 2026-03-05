@@ -16,7 +16,6 @@ from django_model_agent import ModelAgent
 from django_model_agent.base import ModelAgentContext
 from django_model_agent.memory import AgentMemory
 from django_model_agent.tools import (
-    ModelTool,
     ReadOnlyTool,
     ToolResult,
     UpdateTool,
@@ -308,7 +307,9 @@ class TestTemplateErrorHandling:
     def test_render_missing_template_returns_empty(self, place, simple_agent_class):
         """Test that a missing template returns empty string instead of crashing."""
         agent = simple_agent_class(place)
-        result = agent._render_template("nonexistent/template.html", {"instance": place})
+        result = agent._render_template(
+            "nonexistent/template.html", {"instance": place}
+        )
         assert result == ""
 
     def test_instructions_with_missing_template(self, place):
@@ -444,3 +445,30 @@ class TestProposeDeliveryUrlValidation:
         result = tool.execute(service="doordash", url="javascript:alert(1)")
         assert result.success is False
         assert "Invalid URL" in result.message
+
+
+class TestExamplesModule:
+    """Tests for packaged example imports."""
+
+    def test_examples_module_imports_without_test_model_dependency(self):
+        """Importing examples should not require tests.models at module import time."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "sys.path.insert(0, 'src'); "
+                    "import django_model_agent.examples as examples; "
+                    "print(examples.PlaceAgent.model is None)"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.stdout.strip() == "True"

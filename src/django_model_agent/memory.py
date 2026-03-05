@@ -84,7 +84,9 @@ class AgentMemoryManager(models.Manager):
             defaults={"data": defaults or {}},
         )
 
-    def filter_for_model(self, model_class: type[models.Model]) -> QuerySet[AgentMemory]:
+    def filter_for_model(
+        self, model_class: type[models.Model]
+    ) -> QuerySet[AgentMemory]:
         """
         Get all memory records for a specific model type.
 

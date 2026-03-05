@@ -1,27 +1,27 @@
-[project]
-name = "django-model-agent"
-version = "2026.1.1"
-description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
-readme = "README.md"
-authors = [
-    { name = "Jeff Triplett" },
-]
-license = "PolyForm-Noncommercial-1.0.0"
-requires-python = ">=3.13"
-dependencies = [
-    "django>=4.2",
-    "pydantic>=2.0",
-]
-
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "pytest-django>=4.5",
+  "pytest>=8.0",
+  "pytest-django>=4.5"
 ]
+
+[project]
+authors = [
+  {name = "Jeff Triplett"}
+]
+dependencies = [
+  "django>=4.2",
+  "pydantic>=2.0"
+]
+description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
+license = "PolyForm-Noncommercial-1.0.0"
+name = "django-model-agent"
+readme = "README.md"
+requires-python = ">=3.13"
+version = "2026.1.1"
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
+addopts = "-v --tb=short"
+python_files = ["test_*.py"]
 pythonpath = [".", "src"]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --tb=short"

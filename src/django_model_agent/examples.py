@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from tests.models import Place
-
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 
@@ -19,7 +17,7 @@ from .tools import DiffAwareUpdateTool, ModelTool, ReadOnlyTool, ToolResult, Upd
 
 
 # -----------------------------------------------------------------------------
-# Tools for Place model
+# Tools for a place-like model
 # -----------------------------------------------------------------------------
 
 
@@ -33,7 +31,7 @@ class GetPlaceInfoTool(ReadOnlyTool):
     )
 
     def read(self, **kwargs: Any) -> dict[str, Any]:
-        place: Place = self.instance
+        place = self.instance
         return {
             "name": place.name,
             "address": place.address,
@@ -54,10 +52,12 @@ class GetDeliveryOptionsTool(ReadOnlyTool):
     """Tool to get all delivery service links for a place."""
 
     name: ClassVar[str] = "get_delivery_options"
-    description: ClassVar[str] = "Get all available delivery service URLs for this place."
+    description: ClassVar[str] = (
+        "Get all available delivery service URLs for this place."
+    )
 
     def read(self, **kwargs: Any) -> dict[str, Any]:
-        place: Place = self.instance
+        place = self.instance
         return {
             "doordash": place.doordash_url,
             "grubhub": place.grubhub_url,
@@ -75,14 +75,24 @@ class GetHoursTool(ReadOnlyTool):
     """Tool to get operating hours for a place."""
 
     name: ClassVar[str] = "get_hours"
-    description: ClassVar[str] = "Get the operating hours for this place, organized by day of the week."
+    description: ClassVar[str] = (
+        "Get the operating hours for this place, organized by day of the week."
+    )
 
     def read(self, **kwargs: Any) -> dict[str, Any]:
-        place: Place = self.instance
+        place = self.instance
         hours_by_day = place.get_hours_by_day()
 
         # Convert to a more readable format
-        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
         formatted_hours = {}
 
         for day_num, day_name in enumerate(day_names):
@@ -105,7 +115,10 @@ class UpdateDescriptionTool(UpdateTool):
     """Tool to update the place description."""
 
     name: ClassVar[str] = "update_description"
-    description: ClassVar[str] = "Update the description text for this place. " "Requires confirmation before saving."
+    description: ClassVar[str] = (
+        "Update the description text for this place. "
+        "Requires confirmation before saving."
+    )
     allowed_states: ClassVar[list[str]] = ["draft", "public", "featured"]
 
     def update(self, *, description: str, **kwargs: Any) -> None:
@@ -116,7 +129,9 @@ class UpdateContactInfoTool(UpdateTool):
     """Tool to update contact information."""
 
     name: ClassVar[str] = "update_contact_info"
-    description: ClassVar[str] = "Update the contact information (phone, website, address) for this place."
+    description: ClassVar[str] = (
+        "Update the contact information (phone, website, address) for this place."
+    )
     allowed_states: ClassVar[list[str]] = ["draft", "public", "featured"]
 
     def update(
@@ -140,7 +155,8 @@ class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
 
     name: ClassVar[str] = "propose_delivery_url"
     description: ClassVar[str] = (
-        "Propose updates to delivery service URLs. Changes will be queued " "for review before being applied."
+        "Propose updates to delivery service URLs. Changes will be queued "
+        "for review before being applied."
     )
 
     def execute(
@@ -200,7 +216,7 @@ class ChangeStateTool(ModelTool):
     requires_confirmation: ClassVar[bool] = True
 
     def execute(self, *, action: str, **kwargs: Any) -> ToolResult:
-        place: Place = self.instance
+        place = self.instance
 
         # Map action names to FSM transitions
         transitions = {
@@ -245,7 +261,7 @@ class FlagForReviewTool(ModelTool):
     )
 
     def execute(self, *, reason: str, **kwargs: Any) -> ToolResult:
-        place: Place = self.instance
+        place = self.instance
 
         # Add to notes field
         existing_notes = place.notes or ""
@@ -266,23 +282,20 @@ class FlagForReviewTool(ModelTool):
 
 class PlaceAgent(ModelAgent):
     """
-    AI agent for reasoning about and managing Place records.
+    AI agent for reasoning about and managing place-like records.
 
     This agent can answer questions about restaurant information,
     help update records, and propose changes for review.
 
     Example:
-        place = Place.objects.get(pk=123)
+        place = Restaurant.objects.get(pk=123)
         agent = PlaceAgent(place)
 
-        # Ask about hours
-        result = await agent.run("What are the hours on Saturday?")
-
-        # Propose a change
-        result = await agent.run("Update the DoorDash URL to https://doordash.com/new")
+        schema = agent.schema
+        tools = agent.get_tools()
     """
 
-    model = Place
+    model: ClassVar[Any] = None
 
     fields: ClassVar[list[str]] = [
         "name",
@@ -362,7 +375,9 @@ Current place state affects what actions are available:
         FlagForReviewTool,
     ]
 
-    def __init__(self, instance: Place, *, field_set: str | None = None) -> None:
+    def __init__(self, instance: Any, *, field_set: str | None = None) -> None:
+        if self.__class__.model is None:
+            self.__class__.model = instance.__class__
         super().__init__(instance, field_set=field_set)
 
     def get_system_prompts(self) -> str:

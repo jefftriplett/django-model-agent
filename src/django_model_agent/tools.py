@@ -100,7 +100,10 @@ class ModelTool(ABC):
         if hasattr(self.instance, "state"):
             current_state = self.instance.state
             if current_state not in self.allowed_states:
-                return False, f"Tool '{self.name}' not allowed in state '{current_state}'"
+                return (
+                    False,
+                    f"Tool '{self.name}' not allowed in state '{current_state}'",
+                )
 
         return True, None
 
@@ -355,8 +358,12 @@ class DiffAwareUpdateTool(ModelTool):
 
         lines = ["Proposed changes:"]
         for change in self.proposed_changes:
-            status = "✓" if change.approved else ("✗" if change.approved is False else "?")
-            lines.append(f"  {status} {change.field_name}: {change.old_value!r} -> {change.new_value!r}")
+            status = (
+                "✓" if change.approved else ("✗" if change.approved is False else "?")
+            )
+            lines.append(
+                f"  {status} {change.field_name}: {change.old_value!r} -> {change.new_value!r}"
+            )
             if change.reason:
                 lines.append(f"      Reason: {change.reason}")
         return "\n".join(lines)

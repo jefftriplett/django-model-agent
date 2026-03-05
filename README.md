@@ -1,6 +1,6 @@
 # Django Model Agent
 
-> **Note:** This project is experimental and the API will change.
+> **Note:** This project is experimental. The API will change, and the built-in `run()` path is not wired to a concrete `pydantic-ai` integration yet.
 
 A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents.
 
@@ -33,6 +33,8 @@ pip install django-model-agent
 ```
 
 ## Quick Start
+
+Today, the stable part of the package is the Django model/schema/tool abstraction layer. To execute prompts, subclass `ModelAgent` and implement `build_agent()` for your own `pydantic-ai` integration.
 
 ### Class Attribute Style
 
@@ -75,10 +77,16 @@ class RestaurantAgent(ModelAgent):
 
 ### Usage
 
+Inspect the schema, prompts, and tools:
+
 ```python
 restaurant = Restaurant.objects.get(pk=123)
 agent = RestaurantAgent(restaurant)
-result = await agent.run("Are you open on Christmas Day?")
+
+schema = agent.schema
+system_prompt = agent.get_system_prompts()
+instructions = agent.get_instructions()
+tools = agent.get_tools()
 
 # Override prompts at init time
 agent = RestaurantAgent(
@@ -86,6 +94,22 @@ agent = RestaurantAgent(
     system_prompt="You are a concise assistant.",
     instructions="Focus only on hours of operation.",
 )
+```
+
+Wire in your own runtime:
+
+```python
+from pydantic_ai import Agent
+
+
+class RunnableRestaurantAgent(RestaurantAgent):
+    def build_agent(self) -> Agent:
+        return Agent(
+            model=self.schema,
+            system_prompt=self.get_system_prompts(),
+            instructions=self.get_instructions(),
+            tools=self.get_tools(),
+        )
 ```
 
 ## Features
@@ -155,6 +179,22 @@ class GetHoursTool(ReadOnlyTool):
     def read(self, **kwargs) -> dict:
         return {"hours": self.instance.hours}
 ```
+
+## Local Development
+
+Python `3.13` is currently required.
+
+```bash
+uv sync --group dev
+just test
+just lint
+```
+
+Useful commands:
+
+- `just test tests/test_model_agent.py`
+- `just lint`
+- `uv build`
 
 ## License
 

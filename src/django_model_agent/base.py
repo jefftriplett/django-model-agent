@@ -504,7 +504,9 @@ class ModelAgent:
         #     instructions=self.get_instructions(),
         #     tools=self.tools,
         # )
-        raise NotImplementedError("build_agent() must be implemented once pydantic-ai is integrated")
+        raise NotImplementedError(
+            "build_agent() must be implemented once pydantic-ai is integrated"
+        )
 
     async def run(self, prompt: str) -> Any:
         """

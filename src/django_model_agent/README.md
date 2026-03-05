@@ -1,5 +1,7 @@
 # ModelAgent - Django Ninja-style Abstraction for Pydantic AI
 
+> Experimental status: the schema/prompt/tool APIs are usable, but `ModelAgent.run()` still requires a project-specific `build_agent()` implementation.
+
 This module provides a declarative way to bind Django models to Pydantic AI Agents,
 inspired by Django Ninja's `ModelSchema` pattern.
 
@@ -26,20 +28,23 @@ class RestaurantAgent(ModelAgent):
 
     fields = ["name", "address", "hours", "neighborhood"]
 
-    base_system_prompt = """
+    _system_prompts = """
     You are an assistant that helps reason about restaurant information.
     Use the provided model fields as your source of truth.
     """
 
-    instructions_template = "agents/restaurant_instructions.jinja"
+    _instructions_template = "agents/restaurant_instructions.jinja"
 
     tools = [UpdateHoursTool, FlagForReviewTool]
 
 
-# Usage
+# Introspect what the agent exposes
 restaurant = Restaurant.objects.get(pk=123)
 agent = RestaurantAgent(restaurant)
-result = await agent.run("Are we open on Christmas Day?")
+schema = agent.schema
+system_prompt = agent.get_system_prompts()
+instructions = agent.get_instructions()
+tools = agent.get_tools()
 ```
 
 ## Core Components
@@ -56,10 +61,10 @@ Key attributes:
 - `model`: The Django model class
 - `fields`: List of fields to expose (None = all)
 - `exclude`: Fields to exclude from schema
-- `base_system_prompt`: Base prompt for the agent (combined with `@system_prompt` decorators)
-- `instructions_template`: Path to Django template for dynamic instructions
+- `_system_prompts`: Base prompt for the agent (combined with `@system_prompt` decorators)
+- `_instructions_template`: Path to Django template for dynamic instructions
 - `tools`: List of tool classes available to the agent
-- `field_sets`: Named groups of fields for role-based access
+- `_field_sets`: Named groups of fields for role-based access
 
 ### ModelTool (`tools.py`)
 
@@ -113,7 +118,7 @@ ModelAgent supports pydantic-ai style decorators for registering prompts, instru
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours"]
-    base_system_prompt = "Base system prompt."  # Optional class attribute
+    _system_prompts = "Base system prompt."  # Optional class attribute
 
     @ModelAgent.system_prompt
     def dynamic_context(self) -> str:
@@ -150,7 +155,7 @@ Multiple decorated methods of the same type are combined:
 
 ```python
 class Agent(ModelAgent):
-    base_system_prompt = "Base prompt."
+    _system_prompts = "Base prompt."
 
     @ModelAgent.system_prompt
     def context_1(self) -> str:
@@ -172,7 +177,7 @@ Expose different fields based on user role:
 class RestaurantAgent(ModelAgent):
     model = Restaurant
 
-    field_sets = {
+    _field_sets = {
         "public": ["name", "hours", "address"],
         "staff": ["name", "hours", "address", "internal_notes"],
         "admin": None,  # All fields
@@ -213,6 +218,24 @@ class PublishTool(ModelTool):
         self.instance.publish()
         self.instance.save()
         return ToolResult(success=True, message="Published")
+```
+
+## Running with pydantic-ai
+
+`ModelAgent.run()` calls `build_agent()`. The base class intentionally raises `NotImplementedError` until you provide the integration:
+
+```python
+from pydantic_ai import Agent
+
+
+class RunnableRestaurantAgent(RestaurantAgent):
+    def build_agent(self) -> Agent:
+        return Agent(
+            model=self.schema,
+            system_prompt=self.get_system_prompts(),
+            instructions=self.get_instructions(),
+            tools=self.get_tools(),
+        )
 ```
 
 ## Integration with Django Admin
