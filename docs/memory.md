@@ -20,6 +20,31 @@ INSTALLED_APPS = [
 python manage.py migrate django_model_agent
 ```
 
+## Recommended: DjangoMemoryCapability
+
+The simplest way to use memory is
+[`DjangoMemoryCapability`](capabilities.md#djangomemorycapability), which loads
+memory before each run and saves it after:
+
+```python
+from django_model_agent import ModelAgent
+from django_model_agent.capabilities import DjangoMemoryCapability
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "address"]
+
+    def get_extra_capabilities(self):
+        return [DjangoMemoryCapability(max_history=50)]
+```
+
+Past turns are fed back to the agent automatically, and the prompt and response
+are appended and saved when the run finishes.
+
+`AgentMemoryMixin`, documented below, is deprecated in favour of this. See the
+[migration guide](migration.md#agentmemorymixin-is-deprecated).
+
 ## AgentMemory model
 
 `AgentMemory` uses a `GenericForeignKey` to attach a JSON blob to any Django

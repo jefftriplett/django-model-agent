@@ -71,6 +71,12 @@ tool = PublishTool(context)
 result = tool(action="publish")  # Fails if state != "draft"
 ```
 
+This check always runs, so `allowed_states` is enforced no matter how the tool
+is invoked. Adding
+[`DjangoFSMCapability`](capabilities.md#djangofsmcapability) goes a step
+further and hides the tool from the model entirely while it is unavailable, so
+the model never spends tokens on a call that can only be refused.
+
 ### Properties
 
 `instance`

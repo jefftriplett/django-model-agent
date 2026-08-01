@@ -74,9 +74,15 @@ ModelAgent(
 :   Current values of all schema fields from the instance.
 
 `build_agent() -> pydantic_ai.Agent`
-:   Build a `pydantic_ai.Agent` with `deps_type=ModelAgentContext`. System
-    prompts include the schema description and current values. Tools are
-    converted to pydantic-ai compatible functions.
+:   Build a `pydantic_ai.Agent` with `deps_type=ModelAgentContext`, composed
+    from [capabilities](capabilities.md). The schema description and current
+    values are delivered as instructions rather than a system prompt, so stale
+    values never accumulate in message history.
+
+`get_extra_capabilities() -> list[AbstractCapability]`
+:   Additional capabilities to compose into the agent. Override to add
+    capabilities such as `DjangoAuditCapability`. Returns an empty list by
+    default.
 
 `run(prompt: str, **kwargs) -> AgentRunResult` *(async)*
 :   Run the agent with a prompt through pydantic-ai. Lazily calls
@@ -236,6 +242,46 @@ from django_model_agent.memory import AgentMemory
 
 Django model that stores agent memory/state tied to any model instance via
 `GenericForeignKey`. See [Memory](memory.md) for full documentation.
+
+## Capabilities
+
+See [Capabilities](capabilities.md) for usage and examples.
+
+`DjangoModelCapability(*, model_class, fields=None, exclude=None, tools=(), tool_funcs=(), instructions="")`
+:   Contributes the field schema, current values, and the model's tools. Takes
+    a model class, never an instance -- the instance arrives per-run via
+    `ctx.deps.instance`.
+
+`DjangoFSMCapability(*, state_field="state", tools=(), tool_states=None, transitions=None)`
+:   Contributes the current state and legal transitions, and hides tools whose
+    `allowed_states` exclude the current state. Filtering is an optimisation;
+    `ModelTool.check_allowed()` remains the enforcement point.
+
+`DjangoMemoryCapability(*, max_history=100, include_history=True)`
+:   Loads `AgentMemory` before a run and saves it after. Skips instances with
+    no primary key.
+
+`DjangoAuditCapability(*, log_to="logger", callback=None, track_fields=None)`
+:   Snapshots the instance before a run and diffs it after, producing an
+    `AuditRecord`. `log_to` accepts `"logger"`, `"callback"`, or `"none"`.
+
+## AuditRecord
+
+Dataclass describing what one run did.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `instance_pk` | `Any` | Primary key of the audited instance |
+| `model_class` | `str` | Name of the model class |
+| `prompt` | `str` | The prompt that drove the run |
+| `field_changes` | `dict[str, dict[str, Any]]` | `{field: {before, after}}` |
+| `tool_calls` | `list[dict[str, Any]]` | `{name, args}` per call |
+
+`changed -> bool`
+:   Whether any field changed.
+
+`summary() -> str`
+:   Human-readable one-line summary of the changes.
 
 ## AgentMemoryMixin
 

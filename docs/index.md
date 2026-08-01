@@ -133,8 +133,10 @@ Two files are published:
 
 - [Getting started](getting-started.md) — installation, first agent, running prompts
 - [Tools](tools.md) — ModelTool, ReadOnlyTool, UpdateTool, DiffAwareUpdateTool
-- [Memory](memory.md) — AgentMemory model, AgentMemoryMixin
+- [Capabilities](capabilities.md) — compose model, FSM, memory, and audit behaviour
+- [Memory](memory.md) — AgentMemory model, DjangoMemoryCapability
 - [API reference](reference.md) — every class, method, and attribute
+- [Migration guide](migration.md) — what changed and what to move to
 - [Contributing](contributing.md) — setup, testing, conventions
 
 ## License
