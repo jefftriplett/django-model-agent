@@ -141,8 +141,40 @@ def model_tools_to_toolset(
     return toolset
 
 
+def _state_prepare(tool_cls: type) -> Callable | None:
+    """
+    Build a ``prepare`` hook enforcing ``allowed_states``, or None.
+
+    Keeping this on the tool means the restriction travels with it, so a tool is
+    hidden in states it cannot run in whether or not ``DjangoFSMCapability`` is
+    also in play.
+    """
+    allowed = getattr(tool_cls, "allowed_states", None)
+    if not allowed:
+        return None
+
+    allowed = list(allowed)
+
+    def prepare(ctx: RunContext[ModelAgentContext], tool_def: Any) -> Any:
+        state = getattr(ctx.deps.instance, "state", None)
+        if state is None or state in allowed:
+            return tool_def
+        logger.debug(
+            "Hiding tool %r: state %r not in %r", tool_cls.name, state, allowed
+        )
+        return None
+
+    return prepare
+
+
 def _tool_from_class(tool_cls: type) -> Tool:
-    """Wrap a ``ModelTool`` subclass as a context-taking pydantic-ai tool."""
+    """
+    Wrap a ``ModelTool`` subclass as a context-taking pydantic-ai tool.
+
+    ``allowed_states`` and ``requires_confirmation`` are translated onto
+    pydantic-ai's own ``prepare`` and ``requires_approval`` rather than
+    reimplemented, so they behave the way the rest of the ecosystem expects.
+    """
 
     def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
         # Constructed per call so the tool sees this run's instance.
@@ -152,7 +184,20 @@ def _tool_from_class(tool_cls: type) -> Tool:
     tool_func.__qualname__ = tool_cls.name
     tool_func.__doc__ = tool_cls.description
 
-    return Tool(tool_func, name=tool_cls.name, takes_ctx=True)
+    return Tool(
+        tool_func,
+        name=tool_cls.name,
+        takes_ctx=True,
+        prepare=_state_prepare(tool_cls),
+        requires_approval=bool(getattr(tool_cls, "requires_confirmation", False)),
+    )
+
+
+def tools_need_approval(tool_classes: Sequence[type]) -> bool:
+    """Whether any tool asks for human approval before it runs."""
+    return any(
+        getattr(tool_cls, "requires_confirmation", False) for tool_cls in tool_classes
+    )
 
 
 def _tool_from_func(func: Callable) -> Tool:
