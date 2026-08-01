@@ -67,6 +67,11 @@ That's it. The agent knows which fields to expose, generates a Pydantic schema
 from the Django model, and combines your system prompts with a description of
 the available fields and their current values.
 
+All of that reaches the model as *instructions* rather than a system prompt, so
+the field values are re-sent fresh each request instead of accumulating in the
+conversation history. See the [migration guide](migration.md#system-prompts-are-now-instructions)
+if you were relying on the old behaviour.
+
 ## Using the agent
 
 ```python

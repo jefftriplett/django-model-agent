@@ -247,12 +247,17 @@ can be used together on the same agent.
 
 ## How tools are converted for pydantic-ai
 
-When you call `build_agent()`, tools are automatically converted:
+Tools are turned into a pydantic-ai toolset by
+[`DjangoModelCapability`](capabilities.md#djangomodelcapability), which
+`build_agent()` composes for you:
 
-- **`ModelTool` subclasses** are instantiated with the agent's context and
-  wrapped as `pydantic_ai.Tool` objects with `takes_ctx=False`.
-- **Decorated methods** are wrapped as plain tool functions with their
-  original signatures preserved.
+- **`ModelTool` subclasses** are wrapped as `pydantic_ai.Tool` objects with
+  `takes_ctx=True`. The tool is constructed per call from `ctx.deps`, so it
+  always sees the instance for the current run.
+- **Decorated methods** are wrapped the same way, with their original
+  signatures preserved and the agent resolved from `ctx.deps.agent`.
 
-Both types are passed to `pydantic_ai.Agent(tools=...)` and are available to
-the AI model during a run.
+Both kinds take the run context rather than closing over a particular instance.
+That is what lets one agent serve every row of the table instead of needing to
+be rebuilt per instance — see
+[Capabilities](capabilities.md#using-them-with-a-plain-agent).
