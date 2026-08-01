@@ -498,100 +498,98 @@ class ModelAgent:
 
     def _build_pydantic_ai_tools(self) -> list[Any]:
         """
-        Convert ModelTool classes and decorated tool methods into
-        pydantic-ai compatible tool functions.
+        Convert this agent's tools into pydantic-ai Tool objects.
 
-        Returns:
-            List of pydantic-ai Tool objects and plain tool functions
+        Deprecated: tools are now supplied by ``DjangoModelCapability``. Kept
+        because it was part of the public surface; it returns the same tools
+        the capability builds.
         """
-        from pydantic_ai import Tool
+        from .capabilities import model_tools_to_toolset
 
-        from .tools import ModelTool
+        toolset = model_tools_to_toolset(self.tools, self._tool_funcs)
+        return list(toolset.tools.values())
 
-        pydantic_tools: list[Any] = []
-        agent_context = self.context
+    def get_extra_capabilities(self) -> list[Any]:
+        """
+        Additional capabilities to compose into the agent.
 
-        for tool_item in self.tools:
-            if isinstance(tool_item, type) and issubclass(tool_item, ModelTool):
-                tool_instance = tool_item(agent_context)
+        Override to add capabilities such as ``DjangoAuditCapability`` or
+        ``DjangoMemoryCapability``:
 
-                def _make_tool_func(ti):
-                    def tool_func(**kwargs: Any) -> str:
-                        result = ti(**kwargs)
-                        return str(result)
+            class PlaceAgent(ModelAgent):
+                model = Place
 
-                    tool_func.__name__ = ti.name
-                    tool_func.__qualname__ = ti.name
-                    tool_func.__doc__ = ti.description
-                    return tool_func
+                def get_extra_capabilities(self):
+                    return [DjangoAuditCapability(log_to="logger")]
+        """
+        return []
 
-                pydantic_tools.append(
-                    Tool(_make_tool_func(tool_instance), name=tool_instance.name, takes_ctx=False)
-                )
-            elif callable(tool_item):
-                pydantic_tools.append(tool_item)
+    def _build_capabilities(self) -> list[Any]:
+        """
+        Compose the capabilities backing this agent.
 
-        for func in self._tool_funcs:
-            bound_method = func.__get__(self, self.__class__)
+        The class-level ``_system_prompts`` are folded in with ``_instructions``
+        rather than passed as a system prompt. Both describe the model, and the
+        model's field values change between turns -- see ``build_agent``.
+        """
+        from .capabilities import (
+            DjangoFSMCapability,
+            DjangoMemoryCapability,
+            DjangoModelCapability,
+        )
+        from .memory import AgentMemoryMixin
 
-            def _make_decorated_tool(bm):
-                import inspect
+        instruction_parts = [
+            text
+            for text in (self.get_system_prompts(), self.get_instructions())
+            if text
+        ]
 
-                sig = inspect.signature(bm)
-                param_names = list(sig.parameters.keys())
+        capabilities: list[Any] = [
+            DjangoModelCapability(
+                model_class=self.model,
+                fields=self._get_active_fields(),
+                exclude=self.exclude,
+                tools=self.tools,
+                tool_funcs=self._tool_funcs,
+                instructions=instruction_parts,
+            )
+        ]
 
-                def tool_func(**kwargs: Any) -> str:
-                    filtered = {k: v for k, v in kwargs.items() if k in param_names}
-                    return str(bm(**filtered))
+        # Only worth adding when some tool actually restricts by state.
+        if any(getattr(tool, "allowed_states", None) for tool in self.tools):
+            capabilities.append(DjangoFSMCapability(tools=self.tools))
 
-                tool_func.__name__ = bm.__name__
-                tool_func.__qualname__ = bm.__qualname__
-                tool_func.__doc__ = bm.__doc__
-                tool_func.__signature__ = sig
-                tool_func.__annotations__ = {
-                    k: v for k, v in bm.__annotations__.items()
-                    if k != "return"
-                } | {"return": str}
-                return tool_func
+        if isinstance(self, AgentMemoryMixin):
+            capabilities.append(DjangoMemoryCapability())
 
-            pydantic_tools.append(_make_decorated_tool(bound_method))
-
-        return pydantic_tools
+        capabilities.extend(self.get_extra_capabilities())
+        return capabilities
 
     def build_agent(self) -> Any:
         """
-        Build the Pydantic AI Agent.
+        Build the Pydantic AI Agent from this agent's capabilities.
+
+        Everything the agent knows about the model now arrives through
+        capabilities rather than being assembled here.
+
+        Note that the schema and current values go through instructions, not
+        ``system_prompt``. A system prompt is written into message history and
+        stays there, so the field values captured on the first turn would still
+        be sitting in the context on the fifth, contradicting the current ones.
+        Instructions are re-sent fresh each request and kept out of history.
 
         Returns:
-            A configured pydantic_ai.Agent instance with deps_type=ModelAgentContext
+            A configured pydantic_ai.Agent with deps_type=ModelAgentContext
         """
         from pydantic_ai import Agent
 
-        system_prompts_text = self.get_system_prompts()
-        instructions_text = self.get_instructions()
-        pydantic_tools = self._build_pydantic_ai_tools()
-
-        system_prompt_parts: list[str] = []
-        if system_prompts_text:
-            system_prompt_parts.append(system_prompts_text)
-
-        schema_desc = self.get_schema_description()
-        current_vals = self.get_current_values()
-        system_prompt_parts.append(schema_desc)
-        system_prompt_parts.append(f"Current values: {current_vals}")
-
-        ai_model = self._get_ai_model()
-
-        agent = Agent(
-            ai_model,
+        return Agent(
+            self._get_ai_model(),
             deps_type=ModelAgentContext,
-            system_prompt=system_prompt_parts,
-            instructions=instructions_text,
-            tools=pydantic_tools,
+            capabilities=self._build_capabilities(),
             name=f"{self.__class__.__name__}({self.model.__name__})",
         )
-
-        return agent
 
     async def run(self, prompt: str, **kwargs: Any) -> Any:
         """
