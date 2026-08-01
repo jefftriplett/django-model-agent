@@ -97,6 +97,88 @@ agent.get_system_prompts()
 agent.get_schema_description()
 ```
 
+## Configuring a model
+
+Before an agent can call out to a provider, pydantic-ai needs two things: which
+model to use, and credentials for it.
+
+### Credentials
+
+Providers read their keys from the environment. Set whichever matches the model
+you plan to use:
+
+```console
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+export GEMINI_API_KEY="..."         # or GOOGLE_API_KEY
+```
+
+In Django, load these however you already handle secrets — `django-environ`, a
+`.env` file, or your platform's config. They are read by pydantic-ai, not by
+Django settings, so they must be present in the process environment.
+
+### Choosing the model
+
+Model names use pydantic-ai's `provider:model` form. Set it on the class:
+
+```python
+class RestaurantAgent(ModelAgent):
+    model = Restaurant
+    fields = ["name", "hours"]
+    ai_model = "openai:gpt-4o"
+```
+
+or per instance:
+
+```python
+agent = RestaurantAgent(restaurant, ai_model="anthropic:claude-sonnet-4-20250514")
+```
+
+To drive it from settings rather than hardcoding:
+
+```python
+# settings.py
+AGENT_MODEL = env("AGENT_MODEL", default="openai:gpt-4o")
+
+# agents.py
+from django.conf import settings
+
+class RestaurantAgent(ModelAgent):
+    model = Restaurant
+    ai_model = settings.AGENT_MODEL
+```
+
+!!! note "`PYDANTIC_AI_MODEL` is not read by the library"
+
+    You may see `PYDANTIC_AI_MODEL=...` in pydantic-ai's docs. That variable is
+    read by their *example scripts*, not by pydantic-ai itself — setting it has
+    no effect here. Use `ai_model`, wired to your own setting if you want
+    environment control.
+
+### Further reading
+
+pydantic-ai owns model configuration; these are the pages worth having open:
+
+- [Models overview](https://ai.pydantic.dev/models/) — every supported provider
+  and its model-name format
+- [OpenAI](https://ai.pydantic.dev/models/openai/) ·
+  [Anthropic](https://ai.pydantic.dev/models/anthropic/) ·
+  [Google](https://ai.pydantic.dev/models/google/) — per-provider setup,
+  including custom base URLs and self-hosted or OpenAI-compatible endpoints
+- [Model settings](https://ai.pydantic.dev/agents/#model-run-settings) —
+  temperature, token limits, timeouts
+- [Usage limits](https://ai.pydantic.dev/agents/#usage-limits) — capping
+  requests and tokens so a runaway tool loop cannot surprise you
+
+You can also pass a constructed model object instead of a string, which is how
+you reach custom endpoints:
+
+```python
+from pydantic_ai.models.openai import OpenAIChatModel
+
+agent = RestaurantAgent(restaurant, ai_model=OpenAIChatModel("gpt-4o"))
+```
+
 ### Running prompts
 
 django-model-agent integrates with pydantic-ai. Set the AI model on the class

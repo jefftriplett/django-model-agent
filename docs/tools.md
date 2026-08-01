@@ -42,6 +42,88 @@ ModelTool (abstract base)
 └── DiffAwareUpdateTool — proposes changes for review before applying
 ```
 
+## Writing a custom tool
+
+A complete tool, start to finish. Subclass `ModelTool`, give it a `name` and a
+`description`, and implement `execute()`:
+
+```python
+from django_model_agent.tools import ModelTool, ToolResult
+
+
+class WordCountTool(ModelTool):
+    name = "word_count"                                    # (1)
+    description = "Count the words in this place's description"   # (2)
+
+    def execute(self, **kwargs) -> ToolResult:             # (3)
+        words = len(self.instance.description.split())     # (4)
+        return ToolResult(                                 # (5)
+            success=True,
+            message=f"{words} words",
+            data={"word_count": words},
+        )
+```
+
+1. The name the model calls. Must be unique on the agent.
+2. Shown to the model — this is how it decides when to call the tool, so write
+   it for the model, not for you.
+3. Always accept `**kwargs`; the model may send arguments you did not declare.
+4. `self.instance` is the Django model instance. `self.agent` is the parent
+   `ModelAgent`.
+5. Return a `ToolResult`, not a bare string. `message` is what the model sees.
+
+Register it on an agent:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "description"]
+    tools = [WordCountTool]
+```
+
+That is enough to run:
+
+```python
+result = await PlaceAgent(place).run("How long is the description?")
+```
+
+### Taking arguments
+
+Declare keyword arguments on `execute()` and the model will fill them in. Give
+them defaults so a call that omits them still works:
+
+```python
+class TruncateDescriptionTool(ModelTool):
+    name = "truncate_description"
+    description = "Shorten the description to a maximum number of words"
+
+    def execute(self, *, max_words: int = 50, **kwargs) -> ToolResult:
+        words = self.instance.description.split()
+        self.instance.description = " ".join(words[:max_words])
+        self.instance.save(update_fields=["description"])
+        return ToolResult(success=True, message=f"Truncated to {max_words} words")
+```
+
+### Picking a base class
+
+`ModelTool` is the general case. For the two common shapes there are base
+classes that remove the boilerplate:
+
+- **[`ReadOnlyTool`](#readonlytool)** — implement `read()` returning a dict; it
+  wraps the result for you
+- **[`UpdateTool`](#updatetool)** — implement `update()` mutating the instance;
+  it diffs the fields and saves for you
+
+Use plain `ModelTool` when a tool neither simply reads nor simply writes — the
+`WordCountTool` above computes something, and `TruncateDescriptionTool` needs to
+control its own save.
+
+!!! tip "More examples"
+
+    The [cookbook](cookbook.md) has tools in context — gating them behind
+    workflow state, proposing changes for human review, and testing them without
+    calling an API.
+
 ## ModelTool
 
 The base class for all tools. Provides context injection, state checking, and

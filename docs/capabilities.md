@@ -239,10 +239,13 @@ Pass `track_fields=[...]` to watch specific fields instead of every editable one
     the instance you constructed stays `None`. The callback is how records get
     out — and how you persist them to your own audit table.
 
-## Writing your own
+## Writing a custom capability
 
 Capabilities are plain Pydantic AI capabilities. Subclass `AbstractCapability`
-and implement the hooks you need:
+and implement only the hooks you need — every one is optional.
+
+Here is a complete capability that tells the agent whether the instance still
+needs a description:
 
 ```python
 from pydantic_ai import RunContext
@@ -251,23 +254,120 @@ from pydantic_ai.capabilities import AbstractCapability
 from django_model_agent import ModelAgentContext
 
 
-class TenantCapability(AbstractCapability[ModelAgentContext]):
-    """Remind the agent which tenant it is acting for."""
+class DescriptionCoachCapability(AbstractCapability[ModelAgentContext]):   # (1)
+    """Nudge the agent about the state of the description."""
 
-    def get_instructions(self):
+    def __init__(self, *, min_words: int = 20):     # (2)
+        self.min_words = min_words
+
+    def get_instructions(self):                     # (3)
         def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
-            return f"You are acting for tenant {ctx.deps.instance.tenant_id}."
+            place = ctx.deps.instance               # (4)
+            words = len(place.description.split())
+            if words == 0:
+                return "This place has no description. Offer to write one."
+            if words < self.min_words:
+                return f"The description is only {words} words. Suggest expanding it."
+            return f"The description is {words} words, which is sufficient."
 
-        return _instructions
+        return _instructions                        # (5)
 ```
 
-Read state from `ctx.deps` rather than capturing it in `__init__`, so your
-capability stays usable across instances.
+1. Parameterise on `ModelAgentContext` — that is the deps type these agents use.
+2. Configuration goes in `__init__`. **Never the model instance** — see below.
+3. `get_instructions()` is the most common hook. It adds text to what the model
+   sees each request.
+4. The instance arrives per-run from `ctx.deps`, so this is always current.
+5. Return the *callable*, not its result. A plain string would be evaluated once
+   at construction and then go stale.
 
-If a hook needs the database, do that work in `before_run` or `after_run`
-wrapped in `asgiref.sync.sync_to_async` — those hooks are async and Django's
-ORM is not. Keep `get_instructions()` callables free of queries; have them read
-what an earlier hook already loaded.
+Use it like any other capability:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "description"]
+
+    def get_extra_capabilities(self):
+        return [DescriptionCoachCapability(min_words=30)]
+```
+
+### Configuration in `__init__`, instance from `ctx.deps`
+
+This is the rule that keeps a capability reusable:
+
+```python
+# Wrong — binds the capability to one row forever
+def __init__(self, *, place):
+    self.place = place
+
+# Right — read it per run
+def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
+    place = ctx.deps.instance
+```
+
+Capturing the instance means a separate agent per row, and values that go stale
+the moment anything changes them.
+
+### Adding tools
+
+Return a toolset from `get_toolset()` and the capability carries its own tools:
+
+```python
+from pydantic_ai.toolsets import FunctionToolset
+
+
+class GeocodeCapability(AbstractCapability[ModelAgentContext]):
+    def get_toolset(self):
+        toolset = FunctionToolset()
+
+        @toolset.tool
+        def lookup_coordinates(ctx: RunContext[ModelAgentContext]) -> str:
+            """Look up the latitude and longitude for this place."""
+            return geocode(ctx.deps.instance.address)
+
+        return toolset
+```
+
+To wrap existing `ModelTool` classes instead, use
+[`model_tools_to_toolset()`](reference.md#capabilities).
+
+### Running code around a run
+
+`before_run` and `after_run` fire either side of the run. Add `for_run()` when
+you keep state, so two concurrent runs cannot see each other's:
+
+```python
+class TimingCapability(AbstractCapability[ModelAgentContext]):
+    async def for_run(self, ctx):
+        return TimingCapability()          # fresh instance per run
+
+    async def before_run(self, ctx):
+        self._started = time.monotonic()
+
+    async def after_run(self, ctx, *, result):
+        elapsed = time.monotonic() - self._started
+        logger.info("Run took %.2fs", elapsed)
+        return result                      # always return the result
+```
+
+!!! warning "Database access in hooks"
+
+    `before_run` and `after_run` are async; Django's ORM is not. Wrap ORM calls
+    in `asgiref.sync.sync_to_async`, and keep `get_instructions()` callables
+    free of queries — have them read what a hook already loaded.
+
+    ```python
+    from asgiref.sync import sync_to_async
+
+    async def before_run(self, ctx):
+        self._row = await sync_to_async(MyModel.objects.get)(pk=ctx.deps.instance.pk)
+    ```
+
+!!! tip "More examples"
+
+    The [cookbook](cookbook.md) has capabilities in context — scoping an agent
+    to a tenant, persisting an audit trail, and adding memory.
 
 See the [Pydantic AI capabilities docs](https://ai.pydantic.dev/capabilities/overview/)
 for the full set of hooks.
