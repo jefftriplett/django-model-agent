@@ -710,12 +710,16 @@ class ModelAgent:
             **kwargs,
         )
 
-    async def run(self, prompt: str, **kwargs: Any) -> Any:
+    async def run(self, prompt: str | None = None, **kwargs: Any) -> Any:
         """
         Run the agent with a prompt.
 
+        ``prompt`` may be omitted when resuming a run that suspended for tool
+        approval -- pass ``message_history`` and ``deferred_tool_results``
+        instead, and the run continues from where it stopped.
+
         Args:
-            prompt: The user prompt to process
+            prompt: The user prompt, or None when resuming a suspended run
             **kwargs: Additional keyword arguments passed to pydantic-ai's Agent.run()
 
         Returns:
@@ -729,12 +733,12 @@ class ModelAgent:
             **self._run_kwargs(kwargs),
         )
 
-    def run_sync(self, prompt: str, **kwargs: Any) -> Any:
+    def run_sync(self, prompt: str | None = None, **kwargs: Any) -> Any:
         """
         Run the agent with a prompt synchronously.
 
         Args:
-            prompt: The user prompt to process
+            prompt: The user prompt, or None when resuming a suspended run
             **kwargs: Additional keyword arguments passed to pydantic-ai's Agent.run_sync()
 
         Returns:
@@ -748,7 +752,7 @@ class ModelAgent:
             **self._run_kwargs(kwargs),
         )
 
-    def run_stream(self, prompt: str, **kwargs: Any) -> Any:
+    def run_stream(self, prompt: str | None = None, **kwargs: Any) -> Any:
         """
         Stream a run, yielding output as the model produces it.
 
@@ -760,7 +764,7 @@ class ModelAgent:
                     ...
 
         Args:
-            prompt: The user prompt to process
+            prompt: The user prompt, or None when resuming a suspended run
             **kwargs: Forwarded to pydantic-ai's Agent.run_stream()
 
         Returns:
@@ -774,7 +778,7 @@ class ModelAgent:
             **self._run_kwargs(kwargs),
         )
 
-    def run_stream_events(self, prompt: str, **kwargs: Any) -> Any:
+    def run_stream_events(self, prompt: str | None = None, **kwargs: Any) -> Any:
         """
         Stream structured events from a run.
 
@@ -789,7 +793,7 @@ class ModelAgent:
                     ...
 
         Args:
-            prompt: The user prompt to process
+            prompt: The user prompt, or None when resuming a suspended run
             **kwargs: Forwarded to pydantic-ai's Agent.run_stream_events()
 
         Returns:

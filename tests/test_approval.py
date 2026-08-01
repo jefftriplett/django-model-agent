@@ -137,3 +137,57 @@ class TestModelAgentIntegration:
             result = agent.run_sync("go")
 
         assert isinstance(result.output, str)
+
+
+class TestResumeThroughModelAgent:
+    """Resuming needs run() to work without a new prompt."""
+
+    def test_resume_without_prompt(self, place):
+        class GatedAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            tools = [GatedTool]
+
+        agent = GatedAgent(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            first = agent.run_sync("go")
+            assert isinstance(first.output, DeferredToolRequests)
+
+            results = DeferredToolResults()
+            for call in first.output.approvals:
+                results.approvals[call.tool_call_id] = True
+
+            agent.run_sync(
+                message_history=first.all_messages(),
+                deferred_tool_results=results,
+            )
+
+        place.refresh_from_db()
+        assert place.name == "Approved Rename"
+
+    def test_rejecting_leaves_instance_untouched(self, place):
+        class GatedAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            tools = [GatedTool]
+
+        original = place.name
+        agent = GatedAgent(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            first = agent.run_sync("go")
+            results = DeferredToolResults()
+            for call in first.output.approvals:
+                results.approvals[call.tool_call_id] = False
+            agent.run_sync(
+                message_history=first.all_messages(),
+                deferred_tool_results=results,
+            )
+
+        place.refresh_from_db()
+        assert place.name == original

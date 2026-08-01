@@ -167,6 +167,63 @@ def _state_prepare(tool_cls: type) -> Callable | None:
     return prepare
 
 
+def _tool_signature(tool_cls: type) -> list[Any]:
+    """
+    The arguments a ``ModelTool`` subclass actually accepts.
+
+    Read from whichever method the subclass implements -- ``read`` for a
+    ReadOnlyTool, ``update`` for an UpdateTool, ``execute`` otherwise -- because
+    the base ``execute`` only takes ``**kwargs`` and would advertise nothing.
+
+    Without this the model is handed a parameterless schema and can never pass
+    an argument, however carefully the method declares one.
+    """
+    import inspect
+
+    for name in ("read", "update", "execute"):
+        method = getattr(tool_cls, name, None)
+        if method is None:
+            continue
+        # Skip a method inherited from the base classes; it is the generic
+        # **kwargs signature, not this tool's own arguments.
+        if name != "execute" and getattr(method, "__isabstractmethod__", False):
+            continue
+        if method.__qualname__.split(".")[0] in {
+            "ModelTool",
+            "ReadOnlyTool",
+            "UpdateTool",
+            "DiffAwareUpdateTool",
+        }:
+            continue
+
+        params = [
+            param
+            for pname, param in inspect.signature(method).parameters.items()
+            if pname != "self" and param.kind is not inspect.Parameter.VAR_KEYWORD
+        ]
+        if params:
+            return params
+    return []
+
+
+def _with_ctx_signature(params: list[Any]) -> Any:
+    """Build a signature with a properly annotated RunContext first parameter."""
+    import inspect
+
+    ctx_param = inspect.Parameter(
+        "ctx",
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        annotation=RunContext[ModelAgentContext],
+    )
+    normalised = [
+        param.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+        if param.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+        else param
+        for param in params
+    ]
+    return inspect.Signature([ctx_param, *normalised])
+
+
 def _tool_from_class(tool_cls: type) -> Tool:
     """
     Wrap a ``ModelTool`` subclass as a context-taking pydantic-ai tool.
@@ -183,6 +240,15 @@ def _tool_from_class(tool_cls: type) -> Tool:
     tool_func.__name__ = tool_cls.name
     tool_func.__qualname__ = tool_cls.name
     tool_func.__doc__ = tool_cls.description
+
+    params = _tool_signature(tool_cls)
+    if params:
+        tool_func.__signature__ = _with_ctx_signature(params)
+        tool_func.__annotations__ = {
+            param.name: param.annotation
+            for param in params
+            if param.annotation is not param.empty
+        } | {"ctx": RunContext[ModelAgentContext], "return": str}
 
     return Tool(
         tool_func,
@@ -226,10 +292,12 @@ def _tool_from_func(func: Callable) -> Tool:
     tool_func.__name__ = func.__name__
     tool_func.__qualname__ = func.__qualname__
     tool_func.__doc__ = func.__doc__
-    tool_func.__signature__ = sig.replace(parameters=params)
+    # ctx has to lead and be annotated, or pydantic-ai reads the first real
+    # argument as the run context and refuses to build the tool.
+    tool_func.__signature__ = _with_ctx_signature(params)
     tool_func.__annotations__ = {
         k: v for k, v in getattr(func, "__annotations__", {}).items() if k != "return"
-    } | {"return": str}
+    } | {"ctx": RunContext[ModelAgentContext], "return": str}
 
     return Tool(tool_func, name=func.__name__, takes_ctx=True)
 
