@@ -169,7 +169,7 @@ Abstract base class for tools that operate on Django model instances.
 |----------------|------|---------|-------------|
 | `name` | `str` | — | Unique tool identifier |
 | `description` | `str` | — | Human-readable description for the AI |
-| `requires_confirmation` | `bool` | `False` | Whether changes need approval |
+| `requires_confirmation` | `bool` | `False` | Advisory only; not enforced by the library |
 | `allowed_states` | `list[str] \| None` | `None` | FSM states where allowed |
 
 **Abstract method:** `execute(**kwargs) -> ToolResult`
@@ -193,7 +193,8 @@ from django_model_agent.tools import UpdateTool
 Base class for tools that update model fields. Captures state before/after,
 computes diff, and calls `save()` automatically.
 
-`requires_confirmation` defaults to `True`.
+`requires_confirmation` defaults to `True`, but is advisory only — it does not
+gate the save. Pass `preview=True` to inspect changes without writing.
 
 **Abstract method:** `update(**kwargs) -> None`
 

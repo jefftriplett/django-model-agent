@@ -12,6 +12,7 @@ nav = [
   { "Getting started" = "getting-started.md" },
   { "Tools" = "tools.md" },
   { "Capabilities" = "capabilities.md" },
+  { "Cookbook" = "cookbook.md" },
   { "Memory" = "memory.md" },
   { "API reference" = "reference.md" },
   { "Migration guide" = "migration.md" },
