@@ -26,6 +26,8 @@ cannot resolve ``RunContext`` when annotations are strings.
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -450,4 +452,125 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
             )
 
         await sync_to_async(self._memory.save)()
+        return result
+
+
+@dataclass
+class AuditRecord:
+    """What an agent run did to a model instance."""
+
+    instance_pk: Any
+    model_class: str
+    prompt: str
+    field_changes: dict[str, dict[str, Any]] = dataclass_field(default_factory=dict)
+    tool_calls: list[dict[str, Any]] = dataclass_field(default_factory=list)
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.field_changes)
+
+    def summary(self) -> str:
+        if not self.field_changes:
+            return f"{self.model_class}#{self.instance_pk}: no field changes"
+        parts = [
+            f"{name}: {change['before']!r} -> {change['after']!r}"
+            for name, change in self.field_changes.items()
+        ]
+        return f"{self.model_class}#{self.instance_pk}: " + ", ".join(parts)
+
+
+class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
+    """
+    Records what an agent run changed on the model instance.
+
+    Snapshots the instance's fields before the run, diffs them after, and
+    reports the result. Tool calls are collected from the run's messages.
+
+    The snapshot is taken from the in-memory instance rather than the database,
+    so it reflects what the agent actually altered rather than any concurrent
+    writes from elsewhere.
+
+    Note that each run gets its own copy of the capability, so the ``record``
+    attribute on the instance you constructed stays ``None``. Use
+    ``log_to="callback"`` to receive records -- that is the supported way to
+    get them out, and the route to persisting them in your own audit table.
+
+    Args:
+        log_to: ``"logger"`` writes to the module logger, ``"callback"`` hands
+            the record to ``callback``, ``"none"`` only collects it
+        callback: Receives the ``AuditRecord`` when ``log_to="callback"``
+        track_fields: Field names to watch (None watches all editable fields)
+    """
+
+    def __init__(
+        self,
+        *,
+        log_to: str = "logger",
+        callback: Callable[[AuditRecord], None] | None = None,
+        track_fields: Sequence[str] | None = None,
+        id: str | None = None,
+    ) -> None:
+        if log_to == "callback" and callback is None:
+            raise ValueError('log_to="callback" requires a callback')
+
+        self.log_to = log_to
+        self.callback = callback
+        self.track_fields = list(track_fields) if track_fields else None
+        self.id = id
+        self._before: dict[str, Any] | None = None
+        self.record: AuditRecord | None = None
+
+    async def for_run(self, ctx: RunContext[ModelAgentContext]):
+        """Fresh instance per run so snapshots never bleed between runs."""
+        return DjangoAuditCapability(
+            log_to=self.log_to,
+            callback=self.callback,
+            track_fields=self.track_fields,
+            id=self.id,
+        )
+
+    def _snapshot(self, instance: models.Model) -> dict[str, Any]:
+        names = self.track_fields or [
+            f.name for f in instance._meta.fields if f.editable
+        ]
+        return {name: field_value(instance, name) for name in names}
+
+    async def before_run(self, ctx: RunContext[ModelAgentContext]) -> None:
+        self._before = self._snapshot(ctx.deps.instance)
+
+    def _tool_calls(self, result: Any) -> list[dict[str, Any]]:
+        calls: list[dict[str, Any]] = []
+        for message in getattr(result, "all_messages", lambda: [])():
+            for part in getattr(message, "parts", []):
+                if type(part).__name__ == "ToolCallPart":
+                    calls.append({"name": part.tool_name, "args": part.args})
+        return calls
+
+    async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
+        if self._before is None:
+            return result
+
+        instance = ctx.deps.instance
+        after = self._snapshot(instance)
+
+        changes = {
+            name: {"before": before, "after": after[name]}
+            for name, before in self._before.items()
+            if before != after.get(name)
+        }
+
+        prompt = ctx.prompt if isinstance(ctx.prompt, str) else ""
+        self.record = AuditRecord(
+            instance_pk=instance.pk,
+            model_class=type(instance).__name__,
+            prompt=prompt,
+            field_changes=changes,
+            tool_calls=self._tool_calls(result),
+        )
+
+        if self.log_to == "logger":
+            logger.info("Agent run audit -- %s", self.record.summary())
+        elif self.log_to == "callback" and self.callback is not None:
+            self.callback(self.record)
+
         return result
