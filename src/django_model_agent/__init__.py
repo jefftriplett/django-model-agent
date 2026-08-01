@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from .base import ModelAgent, ModelAgentContext
 from .capabilities import (
+    AuditRecord,
+    DjangoAuditCapability,
     DjangoFSMCapability,
     DjangoMemoryCapability,
     DjangoModelCapability,
@@ -10,6 +12,8 @@ from .capabilities import (
 from .tools import ModelTool
 
 __all__ = [
+    "AuditRecord",
+    "DjangoAuditCapability",
     "DjangoFSMCapability",
     "DjangoMemoryCapability",
     "DjangoModelCapability",
