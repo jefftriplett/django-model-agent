@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+import pytest
 from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import UsageLimitExceeded, UsageLimits
 
 from tests.models import Place
 
@@ -458,3 +460,58 @@ class TestInstructionsAreFresh:
 
         assert "Static prompt." in text
         assert "Static guidance." in text
+
+
+class TestUsageLimits:
+    """usage_limits resolution and enforcement."""
+
+    def limited_agent(self, place, **kwargs):
+        class Limited(ModelAgent):
+            model = Place
+            fields = ["name"]
+
+        for key, value in kwargs.items():
+            setattr(Limited, key, value)
+        return Limited(place)
+
+    def test_class_attribute_enforced(self, place):
+        agent = self.limited_agent(place, usage_limits=UsageLimits(request_limit=0))
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()), pytest.raises(UsageLimitExceeded):
+            agent.run_sync("go")
+
+    def test_init_override_beats_class(self, place):
+        agent = self.limited_agent(place, usage_limits=UsageLimits(request_limit=99))
+        agent._usage_limits_override = UsageLimits(request_limit=0)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()), pytest.raises(UsageLimitExceeded):
+            agent.run_sync("go")
+
+    def test_setting_used_as_fallback(self, place, settings):
+        settings.DJANGO_MODEL_AGENT_USAGE_LIMITS = UsageLimits(request_limit=0)
+        agent = self.limited_agent(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()), pytest.raises(UsageLimitExceeded):
+            agent.run_sync("go")
+
+    def test_class_attribute_beats_setting(self, place, settings):
+        settings.DJANGO_MODEL_AGENT_USAGE_LIMITS = UsageLimits(request_limit=0)
+        agent = self.limited_agent(place, usage_limits=UsageLimits(request_limit=99))
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()):
+            assert agent.run_sync("go").output is not None
+
+    def test_no_limits_by_default(self, place, simple_agent_class):
+        assert simple_agent_class(place)._get_usage_limits() is None
+
+    def test_explicit_run_kwarg_wins(self, place):
+        agent = self.limited_agent(place, usage_limits=UsageLimits(request_limit=0))
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()):
+            result = agent.run_sync("go", usage_limits=UsageLimits(request_limit=99))
+        assert result.output is not None

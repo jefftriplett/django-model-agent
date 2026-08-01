@@ -474,10 +474,15 @@ class AuditRecord:
     prompt: str
     field_changes: dict[str, dict[str, Any]] = dataclass_field(default_factory=dict)
     tool_calls: list[dict[str, Any]] = dataclass_field(default_factory=list)
+    usage: dict[str, int] = dataclass_field(default_factory=dict)
 
     @property
     def changed(self) -> bool:
         return bool(self.field_changes)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.usage.get("input_tokens", 0) + self.usage.get("output_tokens", 0)
 
     def summary(self) -> str:
         if not self.field_changes:
@@ -556,6 +561,28 @@ class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
                     calls.append({"name": part.tool_name, "args": part.args})
         return calls
 
+    def _usage(self, result: Any) -> dict[str, int]:
+        """Token and request counts for the run, if the result carries them."""
+        usage = getattr(result, "usage", None)
+        if usage is None:
+            return {}
+        if callable(usage):
+            usage = usage()
+
+        fields = (
+            "input_tokens",
+            "output_tokens",
+            "cache_read_tokens",
+            "cache_write_tokens",
+            "requests",
+            "tool_calls",
+        )
+        return {
+            name: value
+            for name in fields
+            if isinstance(value := getattr(usage, name, None), int)
+        }
+
     async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
         if self._before is None:
             return result
@@ -576,6 +603,7 @@ class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
             prompt=prompt,
             field_changes=changes,
             tool_calls=self._tool_calls(result),
+            usage=self._usage(result),
         )
 
         if self.log_to == "logger":
