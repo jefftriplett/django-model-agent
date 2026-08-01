@@ -362,3 +362,92 @@ class DjangoFSMCapability(AbstractCapability[ModelAgentContext]):
                 continue
             kept.append(tool_def)
         return kept
+
+
+class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
+    """
+    Gives an agent memory that persists across runs, keyed to the instance.
+
+    Backed by the existing ``AgentMemory`` model. Replaces ``AgentMemoryMixin``,
+    which required multiple inheritance on the agent class; as a capability it
+    composes instead and works with a plain ``pydantic_ai.Agent``.
+
+    All database work happens in ``before_run``/``after_run``, wrapped in
+    ``sync_to_async`` because Django's ORM is synchronous and these hooks are
+    not. The instructions callable only reads what was already loaded, so it
+    never touches the database from a sync context.
+
+    Instances with no primary key are skipped rather than raising: an unsaved
+    model has nothing to key memory against.
+
+    Args:
+        max_history: Messages to retain before trimming oldest
+        include_history: Whether past turns are fed back as instructions
+    """
+
+    def __init__(
+        self,
+        *,
+        max_history: int = 100,
+        include_history: bool = True,
+        id: str | None = None,
+    ) -> None:
+        self.max_history = max_history
+        self.include_history = include_history
+        self.id = id
+        self._memory: Any = None
+
+    async def for_run(self, ctx: RunContext[ModelAgentContext]):
+        """Fresh instance per run so loaded memory never leaks between runs."""
+        return DjangoMemoryCapability(
+            max_history=self.max_history,
+            include_history=self.include_history,
+            id=self.id,
+        )
+
+    async def before_run(self, ctx: RunContext[ModelAgentContext]) -> None:
+        from asgiref.sync import sync_to_async
+
+        from .memory import AgentMemory
+
+        instance = ctx.deps.instance
+        if instance.pk is None:
+            logger.debug("Skipping memory for unsaved %s", type(instance).__name__)
+            return
+
+        memory, _ = await sync_to_async(AgentMemory.objects.get_or_create_for)(instance)
+        self._memory = memory
+
+    def get_instructions(self):
+        def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
+            if self._memory is None or not self.include_history:
+                return ""
+
+            history = self._memory.get_history()
+            if not history:
+                return ""
+
+            lines = ["Earlier in this conversation:"]
+            lines.extend(f"  {turn['role']}: {turn['content']}" for turn in history)
+            return "\n".join(lines)
+
+        return _instructions
+
+    async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
+        from asgiref.sync import sync_to_async
+
+        if self._memory is None:
+            return result
+
+        prompt = ctx.prompt
+        if isinstance(prompt, str) and prompt:
+            self._memory.append_to_history("user", prompt, max_history=self.max_history)
+
+        output = getattr(result, "output", None)
+        if output is not None:
+            self._memory.append_to_history(
+                "assistant", str(output), max_history=self.max_history
+            )
+
+        await sync_to_async(self._memory.save)()
+        return result

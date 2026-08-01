@@ -17,6 +17,7 @@ Example:
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -204,9 +205,24 @@ class AgentMemoryMixin:
         agent = RestaurantAgent(restaurant)
         agent.memory.set("last_topic", "hours")
         agent.save_memory()
+
+    Deprecated:
+        Use ``DjangoMemoryCapability`` instead. It composes rather than
+        requiring multiple inheritance, loads and saves memory automatically
+        around each run, and works with a plain ``pydantic_ai.Agent``.
     """
 
     _memory: AgentMemory | None = None
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        warnings.warn(
+            f"{cls.__name__} uses AgentMemoryMixin, which is deprecated. "
+            "Use DjangoMemoryCapability instead -- it loads and saves memory "
+            "around each run rather than requiring manual save_memory() calls.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     @property
     def memory(self) -> AgentMemory:
