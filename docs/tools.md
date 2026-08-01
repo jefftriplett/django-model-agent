@@ -153,18 +153,40 @@ class CheckAvailabilityTool(ModelTool):
 |-----------|------|-------------|
 | `name` | `str` | Unique identifier for the tool |
 | `description` | `str` | Human-readable description shown to the AI |
-| `requires_confirmation` | `bool` | Advisory flag; **not enforced** — see below (default `False`) |
+| `requires_confirmation` | `bool` | Suspend the run for human approval before this tool runs (default `False`) |
 | `allowed_states` | `list[str] \| None` | FSM states where this tool is allowed (`None` = all) |
 
-!!! warning "`requires_confirmation` is not enforced"
+### Requiring approval
 
-    Nothing in the library reads this attribute. Setting it to `True` does not
-    gate the write — `UpdateTool` saves regardless, and it defaults to `True`
-    there. Treat it as documentation of intent only.
+Set `requires_confirmation` and the run suspends before the tool executes,
+returning a `DeferredToolRequests` instead of the usual output:
 
-    To actually require approval, either use `preview=True` and apply the change
-    yourself, or persist a proposal for review — see
-    [Propose changes for human review](cookbook.md#propose-changes-for-human-review).
+```python
+class PublishTool(UpdateTool):
+    name = "publish"
+    description = "Publish this place"
+    requires_confirmation = True
+```
+
+```python
+result = await PlaceAgent(place).run("Publish this listing.")
+
+if isinstance(result.output, DeferredToolRequests):
+    for call in result.output.approvals:
+        ...   # show it to a human, store it, come back later
+```
+
+This maps onto pydantic-ai's `requires_approval`, so it is the same
+human-in-the-loop flow the rest of the ecosystem uses. See
+[approving a tool call](cookbook.md#require-human-approval-before-a-tool-runs)
+for the full approve-and-resume cycle.
+
+!!! note "The default changed"
+
+    `UpdateTool.requires_confirmation` used to default to `True`, but nothing
+    read the attribute, so it never did anything. Now that it genuinely suspends
+    a run, the default is `False` — otherwise every existing update tool would
+    have started waiting for approval. Set it explicitly where you want gating.
 
 ### State checking
 

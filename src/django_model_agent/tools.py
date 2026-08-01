@@ -188,9 +188,17 @@ class ReadOnlyTool(ModelTool):
 
 
 class UpdateTool(ModelTool):
-    """Base class for tools that update model fields."""
+    """
+    Base class for tools that update model fields.
 
-    requires_confirmation: ClassVar[bool] = True
+    ``requires_confirmation`` defaults to False. It used to default to True, but
+    nothing read the attribute, so that default never did anything. Now that it
+    maps onto pydantic-ai's ``requires_approval`` and genuinely suspends a run,
+    defaulting it to True would put every existing update tool behind an
+    approval step. Set it explicitly on tools that should be gated.
+    """
+
+    requires_confirmation: ClassVar[bool] = False
 
     def execute(self, **kwargs: Any) -> ToolResult:
         """Execute an update operation."""

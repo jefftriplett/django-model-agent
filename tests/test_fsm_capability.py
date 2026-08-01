@@ -18,6 +18,7 @@ from django_model_agent import ModelAgentContext
 from django_model_agent.capabilities import (
     DjangoFSMCapability,
     DjangoModelCapability,
+    _state_prepare,
 )
 from django_model_agent.tools import ModelTool, ReadOnlyTool, ToolResult
 
@@ -132,19 +133,29 @@ class TestToolFiltering:
         assert "draft_only" in draft and "public_only" not in draft
         assert "public_only" in public and "draft_only" not in public
 
-    def test_no_filtering_without_state_field(self):
+    def test_tool_filters_even_with_unrelated_capability_state_field(self):
+        """
+        The restriction travels with the tool.
+
+        `allowed_states` is enforced by the tool's own `prepare` hook, so it
+        applies regardless of how the capability is configured.
+        """
         tools = [DraftOnlyTool]
-        cap = DjangoFSMCapability(state_field="nope", tools=tools)
         agent = Agent(
             TestModel(),
             deps_type=ModelAgentContext,
             capabilities=[
                 DjangoModelCapability(model_class=Place, fields=["name"], tools=tools),
-                cap,
+                DjangoFSMCapability(state_field="nope", tools=tools),
             ],
         )
         offered = tools_offered(agent, Place(pk=1, name="A", state="public"))
-        assert "draft_only" in offered
+        assert "draft_only" not in offered
+
+    def test_model_without_state_field_is_left_alone(self):
+        """No state to compare against means no filtering."""
+        prepared = _state_prepare(DraftOnlyTool)
+        assert prepared is not None
 
     def test_tool_states_override_accepted(self):
         agent = build_agent(tool_states={"always": ["draft"]})
@@ -167,8 +178,14 @@ class TestEnforcementBackstop:
         tool = DraftOnlyTool(ModelAgentContext(instance=place, agent=None))
         assert tool().success is True
 
-    def test_agent_without_fsm_capability_still_enforces(self, place):
-        """No FSM capability: tool is offered, but running it is refused."""
+    def test_tool_hidden_without_fsm_capability(self, place):
+        """
+        Without the FSM capability the tool is still hidden, not merely refused.
+
+        `allowed_states` is compiled into the tool's own `prepare` hook, so the
+        model never sees it in a state it cannot run in — the capability only
+        adds the state/transition instructions on top.
+        """
         place.state = "public"
         agent = Agent(
             TestModel(),
@@ -180,10 +197,10 @@ class TestEnforcementBackstop:
             ],
         )
         result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
-        returns = "".join(
-            str(p.content)
+        called = {
+            p.tool_name
             for m in result.all_messages()
             for p in getattr(m, "parts", [])
-            if type(p).__name__ == "ToolReturnPart"
-        )
-        assert "not allowed" in returns
+            if type(p).__name__ == "ToolCallPart"
+        }
+        assert "draft_only" not in called

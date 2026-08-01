@@ -546,10 +546,80 @@ state. To describe the transitions as well, add it yourself:
 Filtering is an optimisation, not a security boundary. `ModelTool.check_allowed()`
 still runs on execution, so a tool called some other way is still refused.
 
+## Require human approval before a tool runs
+
+Mark a tool `requires_confirmation` and the run suspends before it executes:
+
+```python
+class PublishTool(UpdateTool):
+    name = "publish"
+    description = "Publish this place"
+    requires_confirmation = True
+
+    def update(self, **kwargs) -> None:
+        self.instance.state = "public"
+```
+
+The run returns a `DeferredToolRequests` instead of the usual output:
+
+```python
+from pydantic_ai import DeferredToolRequests, DeferredToolResults
+
+agent = PlaceAgent(place)
+result = await agent.run("Publish this listing.")
+
+if isinstance(result.output, DeferredToolRequests):
+    for call in result.output.approvals:
+        PendingAction.objects.create(
+            place=place,
+            tool_name=call.tool_name,
+            tool_call_id=call.tool_call_id,
+            arguments=call.args,
+            messages=ModelMessagesTypeAdapter.dump_python(
+                result.all_messages(), mode="json"
+            ),
+        )
+```
+
+Store the messages alongside the pending call — resuming needs the conversation,
+not just the approval.
+
+When a human approves, replay it:
+
+```python
+pending = PendingAction.objects.get(pk=pk)
+
+results = DeferredToolResults()
+results.approvals[pending.tool_call_id] = True      # or False to reject
+
+result = await agent.run(
+    message_history=ModelMessagesTypeAdapter.validate_python(pending.messages),
+    deferred_tool_results=results,
+)
+```
+
+The tool now runs for real, and the agent carries on from where it stopped.
+
+!!! note "`build_agent()` adds the deferred output type for you"
+
+    pydantic-ai raises a `UserError` if a tool can defer but
+    `DeferredToolRequests` is not among the agent's output types. `ModelAgent`
+    detects gated tools and adds it, so this works without extra wiring — but a
+    hand-built `pydantic_ai.Agent` needs `output_type=[str, DeferredToolRequests]`
+    explicitly.
+
+    It also means `result.output` is no longer guaranteed to be your
+    `output_type` once a tool is gated. Check with `isinstance` before using it.
+
 ## Propose changes for human review
 
-`DiffAwareUpdateTool` collects proposals on the tool instance, which works when
-you drive the tool yourself:
+`DiffAwareUpdateTool` predates the approval flow above. Prefer
+`requires_confirmation` when you simply want to gate a tool; reach for this when
+an agent should propose several edits for review as a batch, rather than pausing
+on each one.
+
+It collects proposals on the tool instance, which works when you drive the tool
+yourself:
 
 ```python
 tool = ProposeUrlChangeTool(ModelAgentContext(instance=place, agent=None))

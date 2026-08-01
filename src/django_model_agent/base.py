@@ -683,8 +683,20 @@ class ModelAgent:
         """
         from pydantic_ai import Agent
 
+        from .capabilities import tools_need_approval
+
         kwargs: dict[str, Any] = {}
         output_type = self._get_output_type()
+
+        if tools_need_approval(self.tools):
+            # A tool marked requires_approval suspends the run and returns a
+            # DeferredToolRequests. pydantic-ai raises a UserError unless that
+            # type is among the outputs, so add it rather than let the run fail.
+            from pydantic_ai import DeferredToolRequests
+
+            base = output_type if output_type is not None else str
+            output_type = [base, DeferredToolRequests]
+
         if output_type is not None:
             # Only passed when set; pydantic-ai's default is plain str output
             # and handing it None would override that.
