@@ -170,6 +170,7 @@ Two files are published:
 - [Tools](tools.md) — ModelTool, ReadOnlyTool, UpdateTool, DiffAwareUpdateTool
 - [Capabilities](capabilities.md) — compose model, FSM, memory, and audit behaviour
 - [Cookbook](cookbook.md) — task-oriented recipes for common jobs
+- [Examples](examples.md) — complete agents: weather, extraction, chat, moderation
 - [Memory](memory.md) — AgentMemory model, DjangoMemoryCapability
 - [API reference](reference.md) — every class, method, and attribute
 - [Migration guide](migration.md) — what changed and what to move to
