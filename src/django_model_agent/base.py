@@ -95,6 +95,7 @@ class ModelAgent:
         _instructions_template: Path to a Django/Jinja template for instructions
         tools: List of tool classes available to the agent
         _field_sets: Named groups of fields for role-based exposure
+        ai_model: The pydantic-ai model name to use (e.g. 'openai:gpt-4o')
 
     Decorators:
         @ModelAgent.system_prompt - Register a method as a system prompt provider
@@ -112,6 +113,8 @@ class ModelAgent:
     tools: Sequence[Any] = []
 
     _field_sets: dict[str, list[str]] = {}
+
+    ai_model: ClassVar[str | None] = None
 
     # -------------------------------------------------------------------------
     # Decorators for pydantic-ai style registration
@@ -186,6 +189,7 @@ class ModelAgent:
         system_prompt: str | list[str] | None = None,
         instructions: str | list[str] | None = None,
         field_set: str | None = None,
+        ai_model: str | None = None,
     ) -> None:
         """
         Initialize a ModelAgent for a specific model instance.
@@ -195,11 +199,13 @@ class ModelAgent:
             system_prompt: Override or extend the class-level system prompts
             instructions: Override or extend the class-level instructions
             field_set: Optional name of a field set to use for schema generation
+            ai_model: Override the pydantic-ai model to use (e.g. 'openai:gpt-4o')
         """
         self.instance = instance
         self.field_set = field_set
         self._schema: type[BaseModel] | None = None
         self._pydantic_agent: Any = None
+        self._ai_model_override = ai_model
 
         # Override class-level prompts/instructions if provided at init
         if system_prompt is not None:
@@ -486,41 +492,144 @@ class ModelAgent:
             values[field_name] = value
         return values
 
+    def _get_ai_model(self) -> str | None:
+        """Resolve the AI model to use, checking instance override then class attribute."""
+        return self._ai_model_override or self.__class__.ai_model
+
+    def _build_pydantic_ai_tools(self) -> list[Any]:
+        """
+        Convert ModelTool classes and decorated tool methods into
+        pydantic-ai compatible tool functions.
+
+        Returns:
+            List of pydantic-ai Tool objects and plain tool functions
+        """
+        from pydantic_ai import Tool
+
+        from .tools import ModelTool
+
+        pydantic_tools: list[Any] = []
+        agent_context = self.context
+
+        for tool_item in self.tools:
+            if isinstance(tool_item, type) and issubclass(tool_item, ModelTool):
+                tool_instance = tool_item(agent_context)
+
+                def _make_tool_func(ti):
+                    def tool_func(**kwargs: Any) -> str:
+                        result = ti(**kwargs)
+                        return str(result)
+
+                    tool_func.__name__ = ti.name
+                    tool_func.__qualname__ = ti.name
+                    tool_func.__doc__ = ti.description
+                    return tool_func
+
+                pydantic_tools.append(
+                    Tool(_make_tool_func(tool_instance), name=tool_instance.name, takes_ctx=False)
+                )
+            elif callable(tool_item):
+                pydantic_tools.append(tool_item)
+
+        for func in self._tool_funcs:
+            bound_method = func.__get__(self, self.__class__)
+
+            def _make_decorated_tool(bm):
+                import inspect
+
+                sig = inspect.signature(bm)
+                param_names = list(sig.parameters.keys())
+
+                def tool_func(**kwargs: Any) -> str:
+                    filtered = {k: v for k, v in kwargs.items() if k in param_names}
+                    return str(bm(**filtered))
+
+                tool_func.__name__ = bm.__name__
+                tool_func.__qualname__ = bm.__qualname__
+                tool_func.__doc__ = bm.__doc__
+                tool_func.__signature__ = sig
+                tool_func.__annotations__ = {
+                    k: v for k, v in bm.__annotations__.items()
+                    if k != "return"
+                } | {"return": str}
+                return tool_func
+
+            pydantic_tools.append(_make_decorated_tool(bound_method))
+
+        return pydantic_tools
+
     def build_agent(self) -> Any:
         """
         Build the Pydantic AI Agent.
 
-        This is where you would integrate with pydantic-ai.
-        Override this method to customize agent construction.
-
         Returns:
-            A configured Pydantic AI Agent instance
+            A configured pydantic_ai.Agent instance with deps_type=ModelAgentContext
         """
-        # Placeholder - actual implementation depends on pydantic-ai API
-        # from pydantic_ai import Agent
-        # return Agent(
-        #     model=self.schema,
-        #     system_prompt=self.get_system_prompts(),
-        #     instructions=self.get_instructions(),
-        #     tools=self.tools,
-        # )
-        raise NotImplementedError(
-            "build_agent() must be implemented once pydantic-ai is integrated"
+        from pydantic_ai import Agent
+
+        system_prompts_text = self.get_system_prompts()
+        instructions_text = self.get_instructions()
+        pydantic_tools = self._build_pydantic_ai_tools()
+
+        system_prompt_parts: list[str] = []
+        if system_prompts_text:
+            system_prompt_parts.append(system_prompts_text)
+
+        schema_desc = self.get_schema_description()
+        current_vals = self.get_current_values()
+        system_prompt_parts.append(schema_desc)
+        system_prompt_parts.append(f"Current values: {current_vals}")
+
+        ai_model = self._get_ai_model()
+
+        agent = Agent(
+            ai_model,
+            deps_type=ModelAgentContext,
+            system_prompt=system_prompt_parts,
+            instructions=instructions_text,
+            tools=pydantic_tools,
+            name=f"{self.__class__.__name__}({self.model.__name__})",
         )
 
-    async def run(self, prompt: str) -> Any:
+        return agent
+
+    async def run(self, prompt: str, **kwargs: Any) -> Any:
         """
         Run the agent with a prompt.
 
         Args:
             prompt: The user prompt to process
+            **kwargs: Additional keyword arguments passed to pydantic-ai's Agent.run()
 
         Returns:
-            The agent's response
+            The AgentRunResult from pydantic-ai
         """
         if self._pydantic_agent is None:
             self._pydantic_agent = self.build_agent()
-        return await self._pydantic_agent.run(prompt)
+        return await self._pydantic_agent.run(
+            prompt,
+            deps=self.context,
+            **kwargs,
+        )
+
+    def run_sync(self, prompt: str, **kwargs: Any) -> Any:
+        """
+        Run the agent with a prompt synchronously.
+
+        Args:
+            prompt: The user prompt to process
+            **kwargs: Additional keyword arguments passed to pydantic-ai's Agent.run_sync()
+
+        Returns:
+            The AgentRunResult from pydantic-ai
+        """
+        if self._pydantic_agent is None:
+            self._pydantic_agent = self.build_agent()
+        return self._pydantic_agent.run_sync(
+            prompt,
+            deps=self.context,
+            **kwargs,
+        )
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.model.__name__}:{self.instance.pk})>"

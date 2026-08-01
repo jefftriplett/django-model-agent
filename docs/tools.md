@@ -1,0 +1,252 @@
+# Tools
+
+django-model-agent provides a hierarchy of tool base classes for building
+tools that operate on Django model instances. Tools integrate with pydantic-ai
+through `build_agent()`, which converts them into pydantic-ai compatible tool
+functions automatically.
+
+## Tool hierarchy
+
+```
+ModelTool (abstract base)
+├── ReadOnlyTool      — reads data, never modifies
+├── UpdateTool        — captures state, applies changes, saves
+└── DiffAwareUpdateTool — proposes changes for review before applying
+```
+
+## ModelTool
+
+The base class for all tools. Provides context injection, state checking, and
+both sync and async execution paths.
+
+```python
+from django_model_agent.tools import ModelTool, ToolResult
+
+class CheckAvailabilityTool(ModelTool):
+    name = "check_availability"
+    description = "Check if this place is currently open"
+    allowed_states = ["public", "featured"]
+
+    def execute(self, **kwargs) -> ToolResult:
+        place = self.instance
+        is_open = place.check_hours()
+        return ToolResult(
+            success=True,
+            message=f"{'Open' if is_open else 'Closed'}",
+            data={"is_open": is_open},
+        )
+```
+
+### Class attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Unique identifier for the tool |
+| `description` | `str` | Human-readable description shown to the AI |
+| `requires_confirmation` | `bool` | Whether changes need approval (default `False`) |
+| `allowed_states` | `list[str] \| None` | FSM states where this tool is allowed (`None` = all) |
+
+### State checking
+
+If `allowed_states` is set and the model instance has a `state` attribute,
+the tool automatically checks whether it can run:
+
+```python
+class PublishTool(ModelTool):
+    name = "publish"
+    description = "Publish this place"
+    allowed_states = ["draft"]
+
+    def execute(self, **kwargs) -> ToolResult:
+        self.instance.state = "public"
+        self.instance.save()
+        return ToolResult(success=True, message="Published")
+```
+
+Calling the tool when the instance is in the wrong state returns a failure
+result without executing:
+
+```python
+tool = PublishTool(context)
+result = tool(action="publish")  # Fails if state != "draft"
+```
+
+### Properties
+
+`instance`
+:   The Django model instance the tool operates on.
+
+`agent`
+:   The parent `ModelAgent` instance.
+
+## ToolResult
+
+Every tool execution returns a `ToolResult`:
+
+```python
+from django_model_agent.tools import ToolResult
+
+result = ToolResult(
+    success=True,
+    message="Hours updated to: 9am-5pm",
+    data={"hours": "9am-5pm"},
+    changes={"hours": {"before": "10am-6pm", "after": "9am-5pm"}},
+)
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | `bool` | Whether the tool executed successfully |
+| `message` | `str` | Human-readable result message |
+| `data` | `dict \| None` | Optional structured data |
+| `changes` | `dict` | Field changes made (for audit/diff) |
+
+## ReadOnlyTool
+
+For tools that only read data and never modify the instance:
+
+```python
+from django_model_agent.tools import ReadOnlyTool
+
+class GetContactInfoTool(ReadOnlyTool):
+    name = "get_contact_info"
+    description = "Get the contact information for this place"
+
+    def read(self, **kwargs) -> dict:
+        return {
+            "phone": self.instance.phone,
+            "website": self.instance.website,
+            "address": self.instance.address,
+        }
+```
+
+Override `read()` instead of `execute()`. The base class wraps the return
+value in a successful `ToolResult` automatically.
+
+## UpdateTool
+
+For tools that modify the instance. Captures state before and after the
+update, computes a diff, and calls `save()` automatically:
+
+```python
+from django_model_agent.tools import UpdateTool
+
+class UpdateDescriptionTool(UpdateTool):
+    name = "update_description"
+    description = "Update the place description"
+    allowed_states = ["draft", "public"]
+
+    def update(self, *, description: str, **kwargs) -> None:
+        self.instance.description = description
+```
+
+Override `update()` instead of `execute()`. Do not call `save()` — the base
+class handles that after computing the diff.
+
+The `changes` field on the returned `ToolResult` contains the diff:
+
+```python
+result = tool.execute(description="New description")
+result.changes
+# {'description': {'before': 'Old text', 'after': 'New description'}}
+```
+
+### Preview mode
+
+Pass `preview=True` to see what would change without saving:
+
+```python
+result = tool.execute(description="New text", preview=True)
+# Instance is modified in memory but not saved to database
+```
+
+## DiffAwareUpdateTool
+
+For multi-agent workflows where one agent proposes changes and another
+reviews them:
+
+```python
+from django_model_agent.tools import DiffAwareUpdateTool, ToolResult
+
+class ProposeUrlChangeTool(DiffAwareUpdateTool):
+    name = "propose_url_change"
+    description = "Propose a URL update for review"
+
+    def execute(self, *, field: str, url: str, reason: str = "", **kwargs) -> ToolResult:
+        self.propose_change(field, url, reason)
+        return ToolResult(
+            success=True,
+            message=f"Proposed change to {field}. Awaiting approval.",
+        )
+```
+
+### Workflow
+
+```python
+# Agent 1 proposes changes
+tool = ProposeUrlChangeTool(context)
+tool.execute(field="website", url="https://new-site.com", reason="URL updated")
+
+# Review pending changes
+pending = tool.get_pending_changes()
+summary = tool.get_diff_summary()
+
+# Agent 2 or human approves/rejects
+for change in pending:
+    change.approve()  # or change.reject()
+
+# Apply approved changes
+applied = tool.apply_approved_changes()
+```
+
+### ProposedChange
+
+Each proposed change is a `ProposedChange` object:
+
+| Field | Description |
+|-------|-------------|
+| `instance` | The model instance |
+| `field_name` | Name of the field being changed |
+| `old_value` | Current value |
+| `new_value` | Proposed new value |
+| `reason` | Why this change is being proposed |
+| `approved` | `True`, `False`, or `None` (pending) |
+
+## Decorated tools
+
+Instead of subclassing `ModelTool`, you can register tools with the
+`@ModelAgent.tool` decorator:
+
+```python
+class RestaurantAgent(ModelAgent):
+    model = Restaurant
+    fields = ["name", "hours"]
+
+    @ModelAgent.tool
+    def get_hours(self) -> str:
+        """Get the operating hours for this restaurant."""
+        return str(self.instance.hours)
+
+    @ModelAgent.tool
+    def update_name(self, new_name: str) -> str:
+        """Update the restaurant name."""
+        self.instance.name = new_name
+        self.instance.save()
+        return f"Name updated to: {new_name}"
+```
+
+The method's docstring becomes the tool description, and the method signature
+defines the tool's parameters. Both `ModelTool` subclasses and decorated tools
+can be used together on the same agent.
+
+## How tools are converted for pydantic-ai
+
+When you call `build_agent()`, tools are automatically converted:
+
+- **`ModelTool` subclasses** are instantiated with the agent's context and
+  wrapped as `pydantic_ai.Tool` objects with `takes_ctx=False`.
+- **Decorated methods** are wrapped as plain tool functions with their
+  original signatures preserved.
+
+Both types are passed to `pydantic_ai.Agent(tools=...)` and are available to
+the AI model during a run.

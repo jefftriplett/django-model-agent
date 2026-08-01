@@ -1,0 +1,247 @@
+# API reference
+
+## ModelAgent
+
+The base class for creating AI agents bound to Django models.
+
+```python
+from django_model_agent import ModelAgent
+```
+
+### Class attributes
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `model` | `type[models.Model]` | — | The Django model class this agent operates on |
+| `fields` | `list[str] \| None` | `None` | Field names to expose (`None` = all fields) |
+| `exclude` | `list[str]` | `[]` | Field names to exclude from the schema |
+| `_system_prompts` | `str \| list[str]` | `""` | System prompt string or list of strings |
+| `_instructions` | `str \| list[str]` | `""` | Instructions string or list of strings |
+| `_instructions_template` | `str \| None` | `None` | Path to a Django template for instructions |
+| `tools` | `Sequence[Any]` | `[]` | Tool classes available to the agent |
+| `_field_sets` | `dict[str, list[str]]` | `{}` | Named groups of fields for role-based exposure |
+| `ai_model` | `str \| None` | `None` | The pydantic-ai model name (e.g. `'openai:gpt-4o'`) |
+
+### `__init__`
+
+```python
+ModelAgent(
+    instance: models.Model,
+    *,
+    system_prompt: str | list[str] | None = None,
+    instructions: str | list[str] | None = None,
+    field_set: str | None = None,
+    ai_model: str | None = None,
+)
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `instance` | The Django model instance to operate on |
+| `system_prompt` | Override or extend the class-level system prompts |
+| `instructions` | Override or extend the class-level instructions |
+| `field_set` | Name of a field set to use for schema generation |
+| `ai_model` | Override the pydantic-ai model to use |
+
+### Properties
+
+`schema`
+:   Lazily built and cached Pydantic `BaseModel` generated from the Django model
+    fields. Field types are mapped from Django field types to Python types.
+
+`context`
+:   A `ModelAgentContext` instance providing access to the model instance and agent.
+
+### Methods
+
+`get_system_prompts() -> str`
+:   Get the combined system prompt. Concatenates class-level `_system_prompts`
+    with all `@ModelAgent.system_prompt` decorated methods.
+
+`get_instructions() -> str | None`
+:   Get the combined instructions. Concatenates class-level `_instructions`,
+    rendered `_instructions_template`, and all `@ModelAgent.instructions`
+    decorated methods. Returns `None` if no instructions are defined.
+
+`get_tools() -> list[Callable]`
+:   Get all tools. Combines class-level `tools` list with
+    `@ModelAgent.tool` decorated methods.
+
+`get_schema_description() -> str`
+:   Human-readable description of the schema fields and their types.
+
+`get_current_values() -> dict[str, Any]`
+:   Current values of all schema fields from the instance.
+
+`build_agent() -> pydantic_ai.Agent`
+:   Build a `pydantic_ai.Agent` with `deps_type=ModelAgentContext`. System
+    prompts include the schema description and current values. Tools are
+    converted to pydantic-ai compatible functions.
+
+`run(prompt: str, **kwargs) -> AgentRunResult` *(async)*
+:   Run the agent with a prompt through pydantic-ai. Lazily calls
+    `build_agent()` on first use. Extra kwargs are forwarded to
+    `pydantic_ai.Agent.run()`.
+
+`run_sync(prompt: str, **kwargs) -> AgentRunResult`
+:   Synchronous version of `run()`. Extra kwargs are forwarded to
+    `pydantic_ai.Agent.run_sync()`.
+
+### Decorators
+
+`@ModelAgent.system_prompt`
+:   Register a method as a system prompt provider. The method should return a
+    string. Multiple methods can be decorated.
+
+`@ModelAgent.instructions`
+:   Register a method as an instructions provider. Instructions are dynamic
+    guidance that can change per-run.
+
+`@ModelAgent.tool`
+:   Register a method as a tool. The method's docstring becomes the tool
+    description, and the method signature defines the tool's parameters.
+
+### Django field type mapping
+
+| Django field | Python type |
+|--------------|-------------|
+| `AutoField`, `BigAutoField`, `SmallAutoField` | `int` |
+| `IntegerField`, `SmallIntegerField`, `BigIntegerField` | `int` |
+| `PositiveIntegerField`, `PositiveSmallIntegerField`, `PositiveBigIntegerField` | `int` |
+| `FloatField` | `float` |
+| `DecimalField` | `Decimal` |
+| `CharField`, `TextField`, `EmailField`, `URLField`, `SlugField` | `str` |
+| `UUIDField`, `FilePathField`, `FileField`, `ImageField` | `str` |
+| `GenericIPAddressField`, `IPAddressField` | `str` |
+| `BooleanField` | `bool` |
+| `NullBooleanField` | `Optional[bool]` |
+| `DateField`, `DateTimeField`, `TimeField`, `DurationField` | `str` |
+| `BinaryField` | `bytes` |
+| `JSONField` | `dict` |
+| `ForeignKey` | `int` |
+
+Nullable fields are wrapped in `Optional[...]`.
+
+## ModelAgentContext
+
+Context object passed to tools, providing access to the model instance.
+
+```python
+from django_model_agent import ModelAgentContext
+```
+
+| Attribute | Description |
+|-----------|-------------|
+| `instance` | The Django model instance |
+| `agent` | The parent `ModelAgent` instance |
+
+`refresh_instance()`
+:   Reload the instance from the database.
+
+## ToolResult
+
+```python
+from django_model_agent.tools import ToolResult
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `success` | `bool` | — | Whether the tool executed successfully |
+| `message` | `str` | — | Human-readable result message |
+| `data` | `dict \| None` | `None` | Optional structured data |
+| `changes` | `dict` | `{}` | Field changes made (for audit/diff) |
+
+## ModelTool
+
+```python
+from django_model_agent.tools import ModelTool
+```
+
+Abstract base class for tools that operate on Django model instances.
+
+| Class attribute | Type | Default | Description |
+|----------------|------|---------|-------------|
+| `name` | `str` | — | Unique tool identifier |
+| `description` | `str` | — | Human-readable description for the AI |
+| `requires_confirmation` | `bool` | `False` | Whether changes need approval |
+| `allowed_states` | `list[str] \| None` | `None` | FSM states where allowed |
+
+**Abstract method:** `execute(**kwargs) -> ToolResult`
+
+## ReadOnlyTool
+
+```python
+from django_model_agent.tools import ReadOnlyTool
+```
+
+Base class for tools that only read data.
+
+**Abstract method:** `read(**kwargs) -> dict[str, Any]`
+
+## UpdateTool
+
+```python
+from django_model_agent.tools import UpdateTool
+```
+
+Base class for tools that update model fields. Captures state before/after,
+computes diff, and calls `save()` automatically.
+
+`requires_confirmation` defaults to `True`.
+
+**Abstract method:** `update(**kwargs) -> None`
+
+## DiffAwareUpdateTool
+
+```python
+from django_model_agent.tools import DiffAwareUpdateTool
+```
+
+Tool that proposes changes instead of applying them directly.
+
+`propose_change(field_name, new_value, reason="") -> ProposedChange`
+:   Propose a change to a field.
+
+`get_pending_changes() -> list[ProposedChange]`
+:   Get changes that haven't been approved or rejected.
+
+`apply_approved_changes() -> int`
+:   Apply all approved changes and save. Returns count of changes applied.
+
+`get_diff_summary() -> str`
+:   Human-readable summary of proposed changes.
+
+## ProposedChange
+
+```python
+from django_model_agent.tools import ProposedChange
+```
+
+| Attribute | Description |
+|-----------|-------------|
+| `instance` | The model instance |
+| `field_name` | Name of the field being changed |
+| `old_value` | Current value |
+| `new_value` | Proposed new value |
+| `reason` | Why this change is proposed |
+| `approved` | `True`, `False`, or `None` |
+
+`approve()` / `reject()` / `apply()`
+
+## AgentMemory
+
+```python
+from django_model_agent.memory import AgentMemory
+```
+
+Django model that stores agent memory/state tied to any model instance via
+`GenericForeignKey`. See [Memory](memory.md) for full documentation.
+
+## AgentMemoryMixin
+
+```python
+from django_model_agent.memory import AgentMemoryMixin
+```
+
+Mixin for `ModelAgent` to add persistent memory support. See
+[Memory](memory.md) for full documentation.

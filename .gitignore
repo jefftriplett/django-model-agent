@@ -32,6 +32,9 @@ htmlcov/
 *.sqlite3
 db.sqlite3
 
+# Docs build output
+site/
+
 # Distribution
 *.tar.gz
 *.whl

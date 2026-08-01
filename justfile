@@ -32,3 +32,12 @@ set dotenv-load := false
 # Run pytest test suite (accepts optional arguments like path or test name)
 @test *ARGS:
     uv run --group dev pytest {{ ARGS }}
+
+# Serve docs locally with live reload
+@docs:
+    uv run zensical serve
+
+# Build docs and generate llms.txt
+@docs-build:
+    uv run zensical build --clean --strict
+    uv run python scripts/gen_llms.py site

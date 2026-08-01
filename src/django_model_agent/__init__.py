@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from .base import ModelAgent
+from .base import ModelAgent, ModelAgentContext
 from .tools import ModelTool
 
 __all__ = [
     "ModelAgent",
+    "ModelAgentContext",
     "ModelTool",
 ]
 
