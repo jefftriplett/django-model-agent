@@ -12,7 +12,7 @@ authors = [
 dependencies = [
   "django>=4.2",
   "pydantic>=2.0",
-  "pydantic-ai>=0.2"
+  "pydantic-ai>=2.22"
 ]
 description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
 license = "PolyForm-Noncommercial-1.0.0"
