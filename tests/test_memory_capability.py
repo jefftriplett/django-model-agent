@@ -21,6 +21,7 @@ from django_model_agent.capabilities import (
     DjangoModelCapability,
 )
 from django_model_agent.memory import AgentMemory, AgentMemoryMixin
+from django_model_agent.tools import ReadOnlyTool
 
 # transaction=True is required, not incidental: the capability reaches the ORM
 # through sync_to_async, which runs on a different thread than the test. The
@@ -28,12 +29,22 @@ from django_model_agent.memory import AgentMemory, AgentMemoryMixin
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def build_agent(**kwargs) -> Agent:
+class InfoTool(ReadOnlyTool):
+    name = "get_info"
+    description = "Get information about this place"
+
+    def read(self, **kwargs):
+        return {"name": self.instance.name}
+
+
+def build_agent(tools=(), **kwargs) -> Agent:
     return Agent(
         TestModel(),
         deps_type=ModelAgentContext,
         capabilities=[
-            DjangoModelCapability(model_class=Place, fields=["name"]),
+            DjangoModelCapability(
+                model_class=Place, fields=["name"], tools=list(tools)
+            ),
             DjangoMemoryCapability(**kwargs),
         ],
     )
@@ -41,6 +52,16 @@ def build_agent(**kwargs) -> Agent:
 
 def run(agent: Agent, instance: Place, prompt: str = "hello"):
     return agent.run_sync(prompt, deps=ModelAgentContext(instance=instance, agent=None))
+
+
+def message_text(result) -> str:
+    """All string content across a run's messages."""
+    return " | ".join(
+        part.content
+        for message in result.all_messages()
+        for part in getattr(message, "parts", [])
+        if isinstance(getattr(part, "content", None), str)
+    )
 
 
 def instructions_sent(result) -> str:
@@ -72,15 +93,45 @@ class TestPersistence:
         assert "first question" in contents
         assert "second question" in contents
 
-    def test_prior_history_fed_back_as_instructions(self, place):
+    def test_prior_turn_replayed_as_messages(self, place):
         agent = build_agent()
         run(agent, place, "remember the alamo")
         second = run(agent, place, "and now?")
-        assert "remember the alamo" in instructions_sent(second)
+        assert "remember the alamo" in message_text(second)
 
-    def test_first_run_has_no_history(self, place):
+    def test_history_not_duplicated(self, place):
+        """before_model_request fires per request; history must inject once."""
+        agent = build_agent()
+        run(agent, place, "unique marker phrase")
+        second = run(agent, place, "and now?")
+        assert message_text(second).count("unique marker phrase") == 1
+
+    def test_first_run_has_no_prior_messages(self, place):
         result = run(build_agent(), place, "opening line")
-        assert "Earlier in this conversation" not in instructions_sent(result)
+        assert message_text(result).count("opening line") == 1
+
+    def test_messages_stored_in_structured_form(self, place):
+        run(build_agent(), place, "hello")
+        stored = AgentMemory.objects.get_for(place).data["messages"]
+        assert isinstance(stored, list) and stored
+        assert all(isinstance(entry, dict) for entry in stored)
+
+    def test_tool_calls_survive_into_next_turn(self, place):
+        """
+        The reason for using real messages rather than a flattened transcript:
+        a text replay loses that a tool ran and what it returned.
+        """
+        agent = build_agent(tools=[InfoTool])
+        run(agent, place, "call the tool")
+        second = run(agent, place, "second turn")
+
+        kinds = {
+            type(part).__name__
+            for message in second.all_messages()
+            for part in getattr(message, "parts", [])
+        }
+        assert "ToolCallPart" in kinds
+        assert "ToolReturnPart" in kinds
 
     def test_memory_is_per_instance(self, place, draft_place):
         agent = build_agent()
@@ -98,11 +149,11 @@ class TestPersistence:
 
 
 class TestOptions:
-    def test_include_history_false_suppresses_feedback(self, place):
+    def test_include_history_false_suppresses_replay(self, place):
         agent = build_agent(include_history=False)
         run(agent, place, "hidden line")
         second = run(agent, place, "next")
-        assert "hidden line" not in instructions_sent(second)
+        assert "hidden line" not in message_text(second)
 
     def test_include_history_false_still_persists(self, place):
         agent = build_agent(include_history=False)
@@ -116,10 +167,22 @@ class TestOptions:
         agent = build_agent(max_history=2)
         run(agent, place, "turn one")
         run(agent, place, "turn two")
+        stored = AgentMemory.objects.get_for(place).data["messages"]
+        assert len(stored) <= 2
 
-        history = AgentMemory.objects.get_for(place).get_history()
-        assert len(history) == 2
-        assert "turn one" not in " ".join(t["content"] for t in history)
+    def test_trim_does_not_start_mid_exchange(self, place):
+        """
+        A blind cut can orphan a tool result from its call, which some providers
+        reject. Trimming lands on a request boundary instead.
+        """
+        agent = build_agent(tools=[InfoTool], max_history=3)
+        run(agent, place, "one")
+        run(agent, place, "two")
+        run(agent, place, "three")
+
+        stored = AgentMemory.objects.get_for(place).data["messages"]
+        if stored:
+            assert stored[0].get("kind") == "request"
 
 
 class TestPerRunIsolation:

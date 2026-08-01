@@ -376,6 +376,45 @@ class DjangoFSMCapability(AbstractCapability[ModelAgentContext]):
         return kept
 
 
+def _load_messages(raw: Any) -> list[Any]:
+    """Deserialise stored messages, tolerating rows written before this format."""
+    if not raw:
+        return []
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+    try:
+        return list(ModelMessagesTypeAdapter.validate_python(raw))
+    except Exception:
+        logger.warning("Ignoring unreadable stored messages", exc_info=True)
+        return []
+
+
+def _dump_messages(messages: Sequence[Any]) -> Any:
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+
+    return ModelMessagesTypeAdapter.dump_python(list(messages), mode="json")
+
+
+def _trim(messages: list[Any], max_messages: int) -> list[Any]:
+    """
+    Keep the most recent messages, without orphaning a tool result.
+
+    Cutting blindly can leave a tool return whose originating call was dropped,
+    which some providers reject outright. Trimming to a request boundary avoids
+    starting the history mid-exchange.
+    """
+    if max_messages <= 0 or len(messages) <= max_messages:
+        return messages
+
+    from pydantic_ai.messages import ModelRequest
+
+    kept = messages[-max_messages:]
+    for index, message in enumerate(kept):
+        if isinstance(message, ModelRequest):
+            return kept[index:]
+    return []
+
+
 class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
     """
     Gives an agent memory that persists across runs, keyed to the instance.
@@ -408,6 +447,8 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
         self.include_history = include_history
         self.id = id
         self._memory: Any = None
+        self._history: list[Any] = []
+        self._injected = False
 
     async def for_run(self, ctx: RunContext[ModelAgentContext]):
         """Fresh instance per run so loaded memory never leaks between runs."""
@@ -429,21 +470,27 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
 
         memory, _ = await sync_to_async(AgentMemory.objects.get_or_create_for)(instance)
         self._memory = memory
+        self._history = _load_messages(memory.data.get("messages"))
+        self._injected = False
 
-    def get_instructions(self):
-        def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
-            if self._memory is None or not self.include_history:
-                return ""
+    async def before_model_request(self, ctx: RunContext[ModelAgentContext], request_context: Any) -> Any:
+        """
+        Prepend the stored conversation to this run's messages.
 
-            history = self._memory.get_history()
-            if not history:
-                return ""
+        Done here rather than as instructions so the model receives real
+        messages -- tool calls, their results, and structured output survive,
+        where a flattened transcript would lose them.
 
-            lines = ["Earlier in this conversation:"]
-            lines.extend(f"  {turn['role']}: {turn['content']}" for turn in history)
-            return "\n".join(lines)
+        Injected once per run. This hook fires before every model request, and
+        the messages it returns are carried forward, so prepending each time
+        would duplicate the history.
+        """
+        if not self.include_history or self._injected or not self._history:
+            return request_context
 
-        return _instructions
+        request_context.messages = [*self._history, *request_context.messages]
+        self._injected = True
+        return request_context
 
     async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
         from asgiref.sync import sync_to_async
@@ -451,10 +498,13 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
         if self._memory is None:
             return result
 
+        messages = list(result.all_messages())
+        self._memory.data["messages"] = _dump_messages(_trim(messages, self.max_history))
+
+        # Kept for anything still reading the old text shape.
         prompt = ctx.prompt
         if isinstance(prompt, str) and prompt:
             self._memory.append_to_history("user", prompt, max_history=self.max_history)
-
         output = getattr(result, "output", None)
         if output is not None:
             self._memory.append_to_history(

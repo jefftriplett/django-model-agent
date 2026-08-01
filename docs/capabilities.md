@@ -267,9 +267,22 @@ Loads memory before a run and saves it after, keyed to the instance.
 
 ```python
 DjangoMemoryCapability(
-    max_history=50,        # turns to keep before trimming oldest
-    include_history=True,  # feed past turns back as instructions
+    max_history=50,        # messages to keep before trimming oldest
+    include_history=True,  # replay past turns into the next run
 )
+
+Past turns are replayed as **real pydantic-ai messages**, not as a summary
+written into the instructions. Tool calls and their results survive, so on the
+next turn the model can see that it already looked something up and what came
+back — which a flattened transcript would lose.
+
+Messages are stored on `AgentMemory.data["messages"]` via
+`ModelMessagesTypeAdapter`, so the JSON is pydantic-ai's own format rather than
+something bespoke.
+
+Trimming to `max_history` lands on a request boundary rather than cutting
+blindly, because a tool result whose originating call was dropped is rejected by
+some providers.
 ```
 
 Backed by the [`AgentMemory`](memory.md) model, so it needs
