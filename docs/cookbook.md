@@ -284,6 +284,77 @@ def agent_for(user, place):
 Fields outside the chosen set never reach the model — they are absent from both
 the schema description and the current values.
 
+## Stream a response to the browser
+
+`run_stream()` yields output as the model produces it. It is an async context
+manager, not a coroutine — do not `await` it:
+
+```python
+async with agent.run_stream("Summarise this place.") as stream:
+    async for chunk in stream.stream_text(delta=True):
+        print(chunk, end="")
+```
+
+### Server-sent events from an async view
+
+```python
+import json
+
+from django.http import StreamingHttpResponse
+
+
+async def summarise(request, pk):
+    place = await Place.objects.aget(pk=pk)
+    agent = PlaceAgent(place)
+
+    async def events():
+        async with agent.run_stream("Summarise this place.") as stream:
+            async for chunk in stream.stream_text(delta=True):
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    response = StreamingHttpResponse(events(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"      # (1)
+    return response
+```
+
+1. Without this, nginx buffers the whole response and the stream arrives all at
+   once — which looks exactly like streaming being broken.
+
+Note `Place.objects.aget()`. The view is async, so the ORM call must be too.
+
+### Showing tool activity
+
+`run_stream_events()` yields structured events rather than text, so the UI can
+say *"checking opening hours…"* while a tool runs:
+
+```python
+from pydantic_ai.messages import FunctionToolCallEvent, PartDeltaEvent
+
+async with agent.run_stream_events("Is this place open?") as events:
+    async for event in events:
+        if isinstance(event, FunctionToolCallEvent):
+            yield sse({"status": f"Running {event.part.tool_name}…"})
+        elif isinstance(event, PartDeltaEvent):
+            yield sse({"text": event.delta.content_delta})
+```
+
+It is also a context manager. That matters more than it looks: if the client
+disconnects mid-stream your loop stops early, and the context manager is what
+tears the run down instead of leaving it hanging.
+
+!!! warning "Tools still hit a synchronous ORM"
+
+    Streaming does not change how tools run. A `ModelTool` that touches the
+    database from inside a streamed run has the same constraint described under
+    [database access in tests](#database-access-in-tests) — the ORM call happens
+    on a worker thread, so it must not be inside an open transaction owned by
+    another thread.
+
+Usage limits apply to streamed runs exactly as they do to `run()`, so a stream
+cannot quietly outspend a capped non-streaming call.
+
 ## Cap spend and track token usage
 
 ### Limiting a run

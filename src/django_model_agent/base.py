@@ -736,5 +736,60 @@ class ModelAgent:
             **self._run_kwargs(kwargs),
         )
 
+    def run_stream(self, prompt: str, **kwargs: Any) -> Any:
+        """
+        Stream a run, yielding output as the model produces it.
+
+        Returns pydantic-ai's async context manager, so use it directly rather
+        than awaiting it:
+
+            async with agent.run_stream("Summarise this.") as stream:
+                async for chunk in stream.stream_text(delta=True):
+                    ...
+
+        Args:
+            prompt: The user prompt to process
+            **kwargs: Forwarded to pydantic-ai's Agent.run_stream()
+
+        Returns:
+            The streaming context manager from pydantic-ai
+        """
+        if self._pydantic_agent is None:
+            self._pydantic_agent = self.build_agent()
+        return self._pydantic_agent.run_stream(
+            prompt,
+            deps=self.context,
+            **self._run_kwargs(kwargs),
+        )
+
+    def run_stream_events(self, prompt: str, **kwargs: Any) -> Any:
+        """
+        Stream structured events from a run.
+
+        Yields events for tool calls, output deltas, and completion, rather than
+        text alone -- useful when the UI should show that a tool is running.
+
+        Like ``run_stream``, this is a context manager rather than a bare
+        iterable, so the run is torn down properly if the consumer stops early:
+
+            async with agent.run_stream_events("Tidy this up.") as events:
+                async for event in events:
+                    ...
+
+        Args:
+            prompt: The user prompt to process
+            **kwargs: Forwarded to pydantic-ai's Agent.run_stream_events()
+
+        Returns:
+            An async iterable of run events
+        """
+        if self._pydantic_agent is None:
+            self._pydantic_agent = self.build_agent()
+        return self._pydantic_agent.run_stream_events(
+            prompt,
+            deps=self.context,
+            **self._run_kwargs(kwargs),
+        )
+
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}({self.model.__name__}:{self.instance.pk})>"

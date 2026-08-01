@@ -105,6 +105,14 @@ ModelAgent(
 :   Synchronous version of `run()`. Extra kwargs are forwarded to
     `pydantic_ai.Agent.run_sync()`.
 
+`run_stream(prompt: str, **kwargs)`
+:   Stream a run. Returns pydantic-ai's async context manager — use
+    `async with`, do not await it.
+
+`run_stream_events(prompt: str, **kwargs)`
+:   Stream structured events (tool calls, output deltas) rather than text alone.
+    Also an async context manager.
+
 ### Decorators
 
 `@ModelAgent.system_prompt`
