@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
 
 from .base import ModelAgent
-from .tools import DiffAwareUpdateTool, ModelTool, ReadOnlyTool, ToolResult, UpdateTool
+from .tools import ModelTool, ReadOnlyTool, ToolResult, UpdateTool
 
 
 # -----------------------------------------------------------------------------
@@ -150,8 +150,15 @@ class UpdateContactInfoTool(UpdateTool):
             self.instance.address = address
 
 
-class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
-    """Tool that proposes delivery URL changes for review."""
+class ProposeDeliveryUrlTool(ModelTool):
+    """
+    Tool that updates a delivery URL, gated on human approval.
+
+    ``requires_confirmation`` suspends the run before this executes, so a
+    reviewer approves the change rather than the agent applying it directly.
+    """
+
+    requires_confirmation: ClassVar[bool] = True
 
     name: ClassVar[str] = "propose_delivery_url"
     description: ClassVar[str] = (
@@ -162,8 +169,8 @@ class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
     def execute(
         self,
         *,
-        service: str,
-        url: str,
+        service: str = "",
+        url: str = "",
         reason: str = "",
         **kwargs: Any,
     ) -> ToolResult:
@@ -180,6 +187,8 @@ class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
             "delivery": "delivery_url",
         }
 
+        # Returned rather than raised, so the model can correct itself and
+        # try again instead of the run failing.
         if service.lower() not in service_fields:
             return ToolResult(
                 success=False,
@@ -196,12 +205,13 @@ class ProposeDeliveryUrlTool(DiffAwareUpdateTool):
             )
 
         field_name = service_fields[service.lower()]
-        self.propose_change(field_name, url, reason)
+        setattr(self.instance, field_name, url)
+        self.instance.save(update_fields=[field_name])
 
         return ToolResult(
             success=True,
-            message=f"Proposed change to {service} URL. Awaiting approval.",
-            data={"field": field_name, "proposed_url": url},
+            message=f"Updated {service} URL.",
+            data={"field": field_name, "url": url, "reason": reason},
         )
 
 

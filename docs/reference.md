@@ -224,6 +224,10 @@ gate the save. Pass `preview=True` to inspect changes without writing.
 from django_model_agent.tools import DiffAwareUpdateTool
 ```
 
+**Deprecated** — use `requires_confirmation` for approval gating, or persist
+proposals to your own model. Proposals held on the tool instance do not survive
+an agent run.
+
 Tool that proposes changes instead of applying them directly.
 
 `propose_change(field_name, new_value, reason="") -> ProposedChange`

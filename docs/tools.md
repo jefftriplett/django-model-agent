@@ -39,7 +39,7 @@ layers meet there.
 ModelTool (abstract base)
 ├── ReadOnlyTool      — reads data, never modifies
 ├── UpdateTool        — captures state, applies changes, saves
-└── DiffAwareUpdateTool — proposes changes for review before applying
+└── DiffAwareUpdateTool — deprecated; see requires_confirmation
 ```
 
 ## Writing a custom tool
@@ -309,6 +309,21 @@ result = tool.execute(description="New text", preview=True)
 ```
 
 ## DiffAwareUpdateTool
+
+!!! warning "Deprecated"
+
+    Use [`requires_confirmation`](#requiring-approval) to gate a single call on
+    a human, or have the tool persist proposals to your own model for batch
+    review — see the
+    [cookbook](cookbook.md#require-human-approval-before-a-tool-runs).
+
+    This class predates pydantic-ai's deferred tool support and works poorly
+    through an agent: tools are constructed per call, so `proposed_changes`
+    never accumulates past one call and the caller cannot reach the instance
+    afterwards to read them. It behaves as intended only when you drive the tool
+    yourself.
+
+    Still functional, and `ProposedChange` is unaffected.
 
 For multi-agent workflows where one agent proposes changes and another
 reviews them:

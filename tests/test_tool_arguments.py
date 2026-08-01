@@ -154,3 +154,48 @@ class TestArgumentsActuallyArrive:
 
         assert seen, "tool never ran"
         assert isinstance(seen[0], int)
+
+
+class TestDiffAwareDeprecation:
+    """DiffAwareUpdateTool is deprecated in favour of requires_confirmation."""
+
+    def test_subclassing_warns(self):
+        import warnings
+
+        from django_model_agent.tools import DiffAwareUpdateTool
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+
+            class LegacyProposeTool(DiffAwareUpdateTool):
+                name: ClassVar[str] = "legacy"
+                description: ClassVar[str] = "Legacy proposal tool"
+
+                def execute(self, **kwargs: Any) -> ToolResult:
+                    return ToolResult(success=True, message="ok")
+
+        messages = [str(w.message) for w in caught]
+        assert any("requires_confirmation" in m for m in messages)
+        assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+    def test_still_functional(self, place):
+        """Deprecated, not removed — existing code must keep working."""
+        import warnings
+
+        from django_model_agent import ModelAgentContext
+        from django_model_agent.tools import DiffAwareUpdateTool
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+
+            class LegacyTool(DiffAwareUpdateTool):
+                name: ClassVar[str] = "legacy2"
+                description: ClassVar[str] = "Legacy"
+
+                def execute(self, **kwargs: Any) -> ToolResult:
+                    self.propose_change("name", "Proposed")
+                    return ToolResult(success=True, message="proposed")
+
+        tool = LegacyTool(ModelAgentContext(instance=place, agent=None))
+        tool.execute()
+        assert len(tool.proposed_changes) == 1

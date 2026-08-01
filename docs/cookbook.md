@@ -613,13 +613,14 @@ The tool now runs for real, and the agent carries on from where it stopped.
 
 ## Propose changes for human review
 
-`DiffAwareUpdateTool` predates the approval flow above. Prefer
-`requires_confirmation` when you simply want to gate a tool; reach for this when
-an agent should propose several edits for review as a batch, rather than pausing
-on each one.
+!!! warning "`DiffAwareUpdateTool` is deprecated"
 
-It collects proposals on the tool instance, which works when you drive the tool
-yourself:
+    Use `requires_confirmation` above to gate a call, or the pattern below to
+    batch proposals. `DiffAwareUpdateTool` collects proposals on the tool
+    instance, which does not survive an agent run — tools are constructed per
+    call, so nothing accumulates and the caller cannot read them afterwards.
+
+It still works when you drive the tool yourself:
 
 ```python
 tool = ProposeUrlChangeTool(ModelAgentContext(instance=place, agent=None))
