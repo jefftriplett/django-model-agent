@@ -39,8 +39,13 @@ class PlaceAgent(ModelAgent):
         return [DjangoMemoryCapability(max_history=50)]
 ```
 
-Past turns are fed back to the agent automatically, and the prompt and response
-are appended and saved when the run finishes.
+Past turns are replayed automatically and the new turn is saved when the run
+finishes.
+
+They are replayed as real pydantic-ai messages, so tool calls and their results
+carry into the next turn — the model can see it already looked something up,
+rather than reading a summary that says so. The messages live on
+`AgentMemory.data["messages"]` in pydantic-ai's own serialisation format.
 
 `AgentMemoryMixin`, documented below, is deprecated in favour of this. See the
 [migration guide](migration.md#agentmemorymixin-is-deprecated).
