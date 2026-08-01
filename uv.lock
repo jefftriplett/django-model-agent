@@ -369,7 +369,7 @@ wheels = [
 [[package]]
 name = "django-model-agent"
 version = "2026.1.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "pydantic" },
