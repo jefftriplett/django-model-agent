@@ -140,6 +140,109 @@ DjangoModelCapability(
 Field values are read fresh on every request, so a value a tool changes
 mid-conversation is visible on the next turn.
 
+### When instructions are re-evaluated
+
+Not everything that ends up in the instructions is refreshed at the same time,
+and the difference bites when an instance changes underneath a long-lived agent.
+
+| Source | Evaluated |
+|---|---|
+| `DjangoModelCapability` schema and current values | **every request** |
+| Any capability's `get_instructions()` callable | **every request** |
+| `_system_prompts` / `_instructions` class attributes | once, when the agent is built |
+| `@ModelAgent.system_prompt` / `@ModelAgent.instructions` methods | once, when the agent is built |
+| `_instructions_template` | once, when the agent is built |
+
+`ModelAgent` collects the class-level prompts, decorated methods, and rendered
+template into text at `build_agent()` time and hands that text to the capability
+as static instructions. The capability then adds the live values on top.
+
+`build_agent()` runs once per `ModelAgent` — the result is cached on
+`_pydantic_agent` at first use — so in practice everything in the bottom half of
+that table is evaluated once per agent object.
+
+!!! warning "A decorated `@ModelAgent.instructions` method does not re-run"
+
+    The name suggests otherwise, and in pydantic-ai `instructions` *are* per
+    request. Here the method is called once and its output frozen:
+
+    ```python
+    class PlaceAgent(ModelAgent):
+        model = Place
+
+        @ModelAgent.instructions
+        def state_hint(self) -> str:
+            return f"The state is {self.instance.state}."   # evaluated ONCE
+
+
+    agent = PlaceAgent(place)
+    await agent.run("...")            # "The state is draft."
+    place.state = "public"
+    await agent.run("...")            # still "The state is draft."
+    ```
+
+    The field values that `DjangoModelCapability` injects *would* be correct in
+    that second run. Only the decorated text is stale — which is worse than if
+    everything were stale, because the two now disagree.
+
+Two ways out. Build a new agent when the instance changes, which is cheap and is
+what most code does anyway:
+
+```python
+for place in Place.objects.all():
+    await PlaceAgent(place).run("...")      # fresh agent, fresh text
+```
+
+Or, if the agent must be long-lived, put the changing text in a capability so it
+is evaluated per request:
+
+```python
+class StateHintCapability(AbstractCapability[ModelAgentContext]):
+    def get_instructions(self):
+        def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
+            return f"The state is {ctx.deps.instance.state}."   # per request
+        return _instructions
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+
+    def get_extra_capabilities(self):
+        return [StateHintCapability()]
+```
+
+### Returning a string vs a callable
+
+Inside a capability the same distinction applies, and it is easy to trip over:
+
+```python
+def get_instructions(self):
+    place = self.instance                       # WRONG on two counts
+    return f"Reviewing {place.name}."           # evaluated once, and there is
+                                                # no instance at build time
+
+def get_instructions(self):
+    def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
+        return f"Reviewing {ctx.deps.instance.name}."   # evaluated per request
+    return _instructions
+```
+
+Return a plain string only for text that genuinely never changes — a persona, a
+house style, a fixed rule. Anything derived from the instance, the clock, or the
+database belongs in the callable.
+
+Work that is expensive but stable can be done once and closed over, which is
+what `DjangoModelCapability` does with the schema description:
+
+```python
+def get_instructions(self):
+    schema = self.schema_description()          # computed once — fields do not
+                                                # change between runs
+    def _instructions(ctx):
+        return f"{schema}\n\nCurrent values: {self.current_values(ctx.deps.instance)}"
+    return _instructions
+```
+
 ### Why instructions and not a system prompt
 
 The current field values go out as *instructions*, not as a system prompt.
@@ -151,6 +254,80 @@ are actually current. Instructions are re-sent fresh on each request and are
 kept out of history, so there is only ever one set of values in play.
 
 This is why `ModelAgent._system_prompts` is delivered as instructions too.
+
+### What is cached and what is not
+
+"Instructions are re-sent fresh on each request" is about *delivery*, not about
+*content*. Every request carries a full instructions block, but only part of
+that block is recomputed. The split trips people up, so it is worth being
+precise.
+
+Recomputed on every request, from the instance in `ctx.deps`:
+
+- the current field values from `DjangoModelCapability`
+- the current state and legal transitions from `DjangoFSMCapability`
+- anything your own capability reads off `ctx.deps` inside its instructions
+  callable
+
+Computed once, when the agent is built, and then frozen for the life of that
+agent object:
+
+- `_instructions` and `_system_prompts`
+- the rendered `_instructions_template`
+- every `@ModelAgent.instructions` and `@ModelAgent.system_prompt` method
+- the schema description (which fields exist and their types)
+
+The reason is that `build_agent()` evaluates those into plain strings and hands
+them to the capabilities, and the first call to `run()` or `run_sync()` caches
+the built agent on `_pydantic_agent`. Later runs reuse it and never call your
+methods again.
+
+So this does what it looks like:
+
+```python
+agent = PlaceAgent(place)
+await agent.run("Publish it.")        # tool sets is_published = True
+await agent.run("Is it live yet?")    # sees is_published=True in current values
+```
+
+And this does not:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+
+    @ModelAgent.instructions
+    def tone(self) -> str:
+        # Evaluated once. Still says "draft" on turn five, even after the
+        # instance has been published.
+        return "Be careful, this is live." if self.instance.is_published else "It's a draft."
+```
+
+If instructions genuinely need to track something that changes mid-conversation,
+put it in a capability and read it off `ctx.deps` inside the instructions
+callable — that is exactly what `DjangoModelCapability` does with field values.
+See [Configuration in `__init__`, instance from `ctx.deps`](#configuration-in-__init__-instance-from-ctxdeps).
+
+Two smaller footguns in the same area:
+
+**The instance is not re-read from the database.** Fresh values come from the
+in-memory `instance`, so a row another process updated will not show up. Call
+`agent.refresh_instance()` before a run when that matters.
+
+**Django caches compiled templates.** Under `DEBUG = False` the cached template
+loader is in play, so editing an `_instructions_template` file does not take
+effect until the process restarts. That is separate from the per-agent caching
+above, and it bites in production, not in `runserver`.
+
+To pick up changed static instructions, build a new agent:
+
+```python
+agent = PlaceAgent(place)      # cheap — the model schema is rebuilt lazily
+```
+
+There is no supported invalidation hook. Setting `agent._pydantic_agent = None`
+forces a rebuild and the tests do exactly that, but it is a private attribute
+and constructing a new agent is the honest version.
 
 ## DjangoFSMCapability
 

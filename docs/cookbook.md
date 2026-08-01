@@ -178,6 +178,75 @@ See pydantic-ai's [output documentation](https://ai.pydantic.dev/output/) for
 `ToolOutput`, `NativeOutput`, and `PromptedOutput`, which control *how* the
 model is asked to produce the structure.
 
+## Write prompts as Django templates
+
+Once a prompt has conditionals in it, building it with string concatenation gets
+ugly fast. Point `_instructions_template` at a template instead:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "description", "state"]
+    _instructions_template = "agents/place_instructions.txt"
+```
+
+```django
+{# templates/agents/place_instructions.txt #}
+You are reviewing {{ instance.name }}.
+
+{% if not instance.description %}
+This place has no description. Offer to write one.
+{% elif instance.description|wordcount < 20 %}
+The description is very short — suggest expanding it.
+{% endif %}
+
+{% if instance.state == "draft" %}
+This listing is not public yet. Focus on what still needs filling in.
+{% else %}
+This listing is live. Be conservative about suggesting changes.
+{% endif %}
+```
+
+The template receives `instance` and `schema` in its context. Everything Django
+templates already give you works — `{% if %}`, filters like `wordcount`,
+`{% include %}` for shared fragments, and `{% for %}` over related objects.
+
+Use a `.txt` template, not `.html`. Django's autoescaping will turn an apostrophe
+in a model field into `&#x27;` and the model will read it literally.
+
+!!! warning "The template renders once per agent, not once per run"
+
+    `_instructions_template` is rendered when the agent is built, so a long-lived
+    agent keeps the text from the first render. Make a new agent when the
+    instance changes, or move genuinely per-run text into a capability — see
+    [when instructions are re-evaluated](capabilities.md#when-instructions-are-re-evaluated).
+
+For prompts that need data beyond the instance, render it yourself and pass it in:
+
+```python
+from django.template.loader import render_to_string
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "description"]
+
+
+def agent_for(place, *, house_style):
+    return PlaceAgent(
+        place,
+        instructions=render_to_string(
+            "agents/place_instructions.txt",
+            {"instance": place, "house_style": house_style,
+             "examples": PlaceExample.objects.filter(approved=True)[:3]},
+        ),
+    )
+```
+
+This is also how you keep prompts editable by non-developers: store the template
+in the database, render it with `Template(...).render(Context(...))`, and pass
+the result as `instructions`.
+
 ## Expose different fields to different roles
 
 `_field_sets` names groups of fields; pick one at construction time:
@@ -205,6 +274,55 @@ def agent_for(user, place):
 
 Fields outside the chosen set never reach the model — they are absent from both
 the schema description and the current values.
+
+## Write instructions in a Django template
+
+Once instructions grow past a couple of sentences, a template beats a string
+literal. `_instructions_template` takes a template path and renders it with
+`instance` and `schema` in the context:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+
+    _instructions_template = "agents/place_instructions.txt"
+```
+
+```django
+{# templates/agents/place_instructions.txt #}
+You maintain the listing for {{ instance.name }}.
+
+{% if instance.is_published %}
+This listing is live. Be conservative: correct clear errors, but do not
+rewrite copy that reads as deliberate.
+{% else %}
+This listing is still a draft, so you have room to suggest bigger edits.
+{% endif %}
+
+Never change the address without being asked to explicitly.
+```
+
+The rendered output is concatenated with `_instructions`, and with anything
+returned by `@ModelAgent.instructions` methods, so you can mix the three.
+
+Two things worth knowing:
+
+A missing template or a template syntax error is **not** an exception. It logs a
+warning and renders as an empty string, so the agent quietly runs with weaker
+instructions. Assert on `get_instructions()` in a test (see
+[Asserting on instructions](#asserting-on-instructions)) rather than trusting
+that the file is wired up:
+
+```python
+def test_instructions_render(place):
+    agent = PlaceAgent(place)
+    assert place.name in agent.get_instructions()
+```
+
+The template renders **once per agent instance**, not once per turn. In a
+branch like the one above, an instance that gets published mid-conversation
+keeps its draft-era instructions until you build a new agent. See
+[What is cached and what is not](capabilities.md#what-is-cached-and-what-is-not).
 
 ## Record an audit trail in your own model
 
