@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from .base import ModelAgent, ModelAgentContext
-from .capabilities import DjangoModelCapability, model_tools_to_toolset
+from .capabilities import (
+    DjangoFSMCapability,
+    DjangoModelCapability,
+    model_tools_to_toolset,
+)
 from .tools import ModelTool
 
 __all__ = [
+    "DjangoFSMCapability",
     "DjangoModelCapability",
     "ModelAgent",
     "ModelAgentContext",

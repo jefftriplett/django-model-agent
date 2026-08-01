@@ -269,3 +269,96 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
         if not self.tools and not self.tool_funcs:
             return None
         return model_tools_to_toolset(self.tools, self.tool_funcs)
+
+
+class DjangoFSMCapability(AbstractCapability[ModelAgentContext]):
+    """
+    Makes an agent aware of a model's state machine.
+
+    Tells the agent which state the instance is in and which transitions are
+    legal, and hides tools that cannot run in that state.
+
+    Hiding is an optimisation, not the enforcement point: ``ModelTool`` still
+    checks ``allowed_states`` in ``check_allowed()`` when it runs. Filtering
+    here just means the model never sees a tool it cannot use, so it does not
+    spend tokens calling one or get a refusal back mid-conversation.
+
+    Args:
+        state_field: Name of the field holding the state
+        tools: ``ModelTool`` subclasses whose ``allowed_states`` should apply
+        tool_states: Extra ``{tool_name: [states]}`` mapping, for tools that
+            are not ``ModelTool`` subclasses
+        transitions: ``{from_state: [to_states]}`` used to describe legal moves
+    """
+
+    def __init__(
+        self,
+        *,
+        state_field: str = "state",
+        tools: Sequence[type] = (),
+        tool_states: dict[str, Sequence[str]] | None = None,
+        transitions: dict[str, Sequence[str]] | None = None,
+        id: str | None = None,
+    ) -> None:
+        self.state_field = state_field
+        self.tools = list(tools)
+        self.transitions = transitions or {}
+        self.id = id
+
+        # Tool name -> states it is allowed in. Tools with no restriction are
+        # left out entirely so they are never filtered.
+        self.tool_states: dict[str, list[str]] = {}
+        for tool_cls in self.tools:
+            allowed = getattr(tool_cls, "allowed_states", None)
+            if allowed:
+                self.tool_states[tool_cls.name] = list(allowed)
+        for name, states in (tool_states or {}).items():
+            self.tool_states[name] = list(states)
+
+    def current_state(self, instance: models.Model) -> Any:
+        """The instance's state, or None if it has no such field."""
+        return getattr(instance, self.state_field, None)
+
+    def available_transitions(self, state: Any) -> list[str]:
+        return list(self.transitions.get(state, ()))
+
+    def get_instructions(self):
+        def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
+            state = self.current_state(ctx.deps.instance)
+            if state is None:
+                return ""
+
+            lines = [f"The current {self.state_field} is '{state}'."]
+            if self.transitions:
+                moves = self.available_transitions(state)
+                if moves:
+                    lines.append(f"Valid transitions from here: {', '.join(moves)}.")
+                else:
+                    lines.append("There are no valid transitions from here.")
+            return "\n".join(lines)
+
+        return _instructions
+
+    async def prepare_tools(
+        self,
+        ctx: RunContext[ModelAgentContext],
+        tool_defs: list[Any],
+    ) -> list[Any]:
+        """Drop tools that cannot run in the instance's current state."""
+        if not self.tool_states:
+            return tool_defs
+
+        state = self.current_state(ctx.deps.instance)
+        if state is None:
+            return tool_defs
+
+        kept = []
+        for tool_def in tool_defs:
+            allowed = self.tool_states.get(tool_def.name)
+            if allowed is not None and state not in allowed:
+                logger.debug(
+                    "Hiding tool %r: state %r not in %r", tool_def.name, state, allowed
+                )
+                continue
+            kept.append(tool_def)
+        return kept
