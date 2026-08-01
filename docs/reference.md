@@ -20,7 +20,8 @@ from django_model_agent import ModelAgent
 | `_instructions_template` | `str \| None` | `None` | Path to a Django template for instructions |
 | `tools` | `Sequence[Any]` | `[]` | Tool classes available to the agent |
 | `_field_sets` | `dict[str, list[str]]` | `{}` | Named groups of fields for role-based exposure |
-| `ai_model` | `str \| None` | `None` | The pydantic-ai model name (e.g. `'openai:gpt-4o'`) |
+| `ai_model` | `str \| None` | `None` | The pydantic-ai model name (e.g. `'openai:gpt-4o'`); falls back to `PYDANTIC_AI_MODEL` |
+| `output_type` | `Any` | `None` | Structured output type; `None` gives plain string output |
 
 ### `__init__`
 
@@ -42,6 +43,7 @@ ModelAgent(
 | `instructions` | Override or extend the class-level instructions |
 | `field_set` | Name of a field set to use for schema generation |
 | `ai_model` | Override the pydantic-ai model to use |
+| `output_type` | Override the structured output type |
 
 ### Properties
 
@@ -78,6 +80,14 @@ ModelAgent(
     from [capabilities](capabilities.md). The schema description and current
     values are delivered as instructions rather than a system prompt, so stale
     values never accumulate in message history.
+
+`_get_ai_model() -> str | Model | None`
+:   Resolve the model: `__init__` argument, then class `ai_model`, then the
+    `PYDANTIC_AI_MODEL` environment variable.
+
+`_get_output_type() -> Any`
+:   Resolve the structured output type: `__init__` argument, then class
+    `output_type`. `None` leaves pydantic-ai's plain string output in place.
 
 `get_extra_capabilities() -> list[AbstractCapability]`
 :   Additional capabilities to compose into the agent. Override to add

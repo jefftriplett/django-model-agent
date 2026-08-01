@@ -47,6 +47,137 @@ for place in Place.objects.filter(state="draft"):
     result = await PlaceAgent(place).run("Summarise this place.")
 ```
 
+## Get structured data back instead of prose
+
+By default `result.output` is a string. Declare an `output_type` and it becomes
+a validated Pydantic model instead:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class PlaceReview(BaseModel):
+    summary: str
+    quality_score: int = Field(ge=1, le=5)
+    missing_fields: list[str] = []
+    should_publish: bool
+
+
+class PlaceReviewAgent(ModelAgent):
+    model = Place
+    fields = ["name", "address", "phone", "description"]
+    output_type = PlaceReview
+    _system_prompts = "Review this place listing for completeness."
+
+
+result = await PlaceReviewAgent(place).run("Review this listing.")
+
+result.output.quality_score   # 4
+result.output.missing_fields  # ["phone"]
+```
+
+The model is *forced* to return that shape — pydantic-ai validates the response
+and retries if it does not match, so you never parse prose or handle a stray
+"Sure! Here's the review:" preamble.
+
+Set it per agent or per run when it varies:
+
+```python
+agent = PlaceReviewAgent(place, output_type=ShortSummary)   # per agent
+result = await agent.run("Summarise.", output_type=ShortSummary)  # per run
+```
+
+### Storing the result
+
+`result.output` is a normal Pydantic model, so `model_dump()` gives you a dict
+ready for the ORM:
+
+```python
+review = result.output
+
+place.description = review.summary
+place.quality_score = review.quality_score
+place.save(update_fields=["description", "quality_score"])
+```
+
+Into a `JSONField`, keeping the whole payload:
+
+```python
+class Place(models.Model):
+    ...
+    last_review = models.JSONField(null=True, blank=True)
+
+place.last_review = review.model_dump(mode="json")   # (1)
+place.save(update_fields=["last_review"])
+```
+
+1. `mode="json"` matters — it converts `datetime`, `Decimal`, and `UUID` into
+   JSON-safe values. Plain `model_dump()` leaves Python objects that a
+   `JSONField` cannot serialise.
+
+Into a related model, one row per run:
+
+```python
+class PlaceReviewRecord(models.Model):
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, related_name="reviews")
+    summary = models.TextField()
+    quality_score = models.PositiveSmallIntegerField()
+    missing_fields = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+PlaceReviewRecord.objects.create(place=place, **review.model_dump())
+```
+
+That last form works only while the field names line up. Once they drift, map
+explicitly rather than renaming your schema to match the table — the schema is
+what the model sees, and it should read well to the model first.
+
+### Validate before you trust it
+
+Validation guarantees the *shape*, not that the content is sensible. Keep your
+own checks for anything that matters:
+
+```python
+review = result.output
+
+if review.should_publish and place.state == "draft":
+    if not place.address:
+        raise ValueError("Refusing to publish without an address")
+    place.publish()
+    place.save()
+```
+
+Constrain what you can in the schema itself — `Field(ge=1, le=5)` above means an
+out-of-range score never reaches your code.
+
+### Unions when the answer varies
+
+Let the model pick a shape by using a union, then branch on what came back:
+
+```python
+class NeedsWork(BaseModel):
+    problems: list[str]
+
+class ReadyToPublish(BaseModel):
+    confidence: float
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    output_type = NeedsWork | ReadyToPublish
+
+match (await PlaceAgent(place).run("Assess this listing.")).output:
+    case ReadyToPublish(confidence=c) if c > 0.8:
+        place.publish()
+    case NeedsWork(problems=problems):
+        place.notes = "\n".join(problems)
+place.save()
+```
+
+See pydantic-ai's [output documentation](https://ai.pydantic.dev/output/) for
+`ToolOutput`, `NativeOutput`, and `PromptedOutput`, which control *how* the
+model is asked to produce the structure.
+
 ## Expose different fields to different roles
 
 `_field_sets` names groups of fields; pick one at construction time:

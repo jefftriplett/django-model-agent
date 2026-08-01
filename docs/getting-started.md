@@ -148,12 +148,31 @@ class RestaurantAgent(ModelAgent):
     ai_model = settings.AGENT_MODEL
 ```
 
-!!! note "`PYDANTIC_AI_MODEL` is not read by the library"
+### `PYDANTIC_AI_MODEL`
 
-    You may see `PYDANTIC_AI_MODEL=...` in pydantic-ai's docs. That variable is
-    read by their *example scripts*, not by pydantic-ai itself — setting it has
-    no effect here. Use `ai_model`, wired to your own setting if you want
-    environment control.
+If neither is set, django-model-agent falls back to the `PYDANTIC_AI_MODEL`
+environment variable:
+
+```console
+PYDANTIC_AI_MODEL=anthropic:claude-sonnet-4-20250514 python manage.py my_command
+```
+
+This follows the convention pydantic-ai uses throughout
+[its examples](https://ai.pydantic.dev/examples/pydantic-model/), which switch
+providers without editing code. Note that pydantic-ai itself does not read the
+variable — the examples call `os.getenv('PYDANTIC_AI_MODEL', ...)` and pass the
+result to `Agent()`. django-model-agent reads it for you, so the same convention
+works here.
+
+Resolution order, first match wins:
+
+| Source | Example |
+|---|---|
+| `__init__` argument | `PlaceAgent(place, ai_model="openai:gpt-4o")` |
+| Class attribute | `ai_model = "openai:gpt-4o"` |
+| Environment | `PYDANTIC_AI_MODEL=openai:gpt-4o` |
+
+An empty `PYDANTIC_AI_MODEL` counts as unset.
 
 ### Further reading
 
@@ -228,6 +247,52 @@ with pai.override(model=TestModel()):
     result = agent.run_sync("What are the hours?")
     assert result.output is not None
 ```
+
+## Getting structured output
+
+`result.output` is a string by default. Set `output_type` to get a validated
+Pydantic model instead:
+
+```python
+from pydantic import BaseModel, Field
+
+
+class Hours(BaseModel):
+    opens_at: str
+    closes_at: str
+    is_open_today: bool
+    confidence: float = Field(ge=0, le=1)
+
+
+class RestaurantAgent(ModelAgent):
+    model = Restaurant
+    fields = ["name", "hours"]
+    output_type = Hours
+
+
+result = await RestaurantAgent(restaurant).run("When are we open today?")
+result.output.opens_at        # "09:00"
+result.output.is_open_today   # True
+```
+
+pydantic-ai validates the response against the schema and retries if it does not
+match, so there is no prose to parse. Store it with `model_dump()`:
+
+```python
+restaurant.hours_json = result.output.model_dump(mode="json")
+restaurant.save(update_fields=["hours_json"])
+```
+
+It can also be set per agent or per run:
+
+```python
+agent = RestaurantAgent(restaurant, output_type=Hours)
+result = await agent.run("When are we open?", output_type=Hours)
+```
+
+See the [cookbook](cookbook.md#get-structured-data-back-instead-of-prose) for
+storing results in related models, validating before acting, and returning one
+of several shapes.
 
 ## Decorator style
 

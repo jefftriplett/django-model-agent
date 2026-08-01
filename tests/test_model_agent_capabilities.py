@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
 
 from tests.models import Place
@@ -22,6 +23,15 @@ from django_model_agent.capabilities import (
     DjangoModelCapability,
 )
 from django_model_agent.tools import ReadOnlyTool
+
+
+class Review(BaseModel):
+    summary: str
+    score: int
+
+
+class Summary(BaseModel):
+    text: str
 
 
 class PlainTool(ReadOnlyTool):
@@ -267,3 +277,86 @@ class TestDecoratedTools:
             if type(p).__name__ == "ToolCallPart"
         }
         assert "plain" in called
+
+
+class TestModelResolution:
+    """ai_model resolution, including the PYDANTIC_AI_MODEL convention."""
+
+    def agent_class(self, ai_model=None):
+        class Resolved(ModelAgent):
+            model = Place
+            fields = ["name"]
+
+        Resolved.ai_model = ai_model
+        return Resolved
+
+    def test_init_argument_wins(self, place, monkeypatch):
+        monkeypatch.setenv("PYDANTIC_AI_MODEL", "env:model")
+        cls = self.agent_class(ai_model="class:model")
+        assert cls(place, ai_model="init:model")._get_ai_model() == "init:model"
+
+    def test_class_attribute_beats_env(self, place, monkeypatch):
+        monkeypatch.setenv("PYDANTIC_AI_MODEL", "env:model")
+        cls = self.agent_class(ai_model="class:model")
+        assert cls(place)._get_ai_model() == "class:model"
+
+    def test_env_used_as_fallback(self, place, monkeypatch):
+        monkeypatch.setenv("PYDANTIC_AI_MODEL", "env:model")
+        assert self.agent_class()(place)._get_ai_model() == "env:model"
+
+    def test_none_when_nothing_set(self, place, monkeypatch):
+        monkeypatch.delenv("PYDANTIC_AI_MODEL", raising=False)
+        assert self.agent_class()(place)._get_ai_model() is None
+
+    def test_empty_env_treated_as_unset(self, place, monkeypatch):
+        monkeypatch.setenv("PYDANTIC_AI_MODEL", "")
+        assert self.agent_class()(place)._get_ai_model() is None
+
+
+class TestStructuredOutput:
+    """output_type, declared on the class or passed per agent/run."""
+
+    def run_agent(self, agent, prompt="go", **kwargs):
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+        with pai.override(model=TestModel()):
+            return agent.run_sync(prompt, **kwargs)
+
+    def test_default_output_is_str(self, place, simple_agent_class):
+        result = self.run_agent(simple_agent_class(place))
+        assert isinstance(result.output, str)
+
+    def test_class_level_output_type(self, place):
+        class ReviewAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            output_type = Review
+
+        result = self.run_agent(ReviewAgent(place))
+        assert isinstance(result.output, Review)
+
+    def test_init_override(self, place, simple_agent_class):
+        result = self.run_agent(simple_agent_class(place, output_type=Review))
+        assert isinstance(result.output, Review)
+
+    def test_init_beats_class(self, place):
+        class ReviewAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            output_type = Review
+
+        result = self.run_agent(ReviewAgent(place, output_type=Summary))
+        assert isinstance(result.output, Summary)
+
+    def test_per_run_output_type(self, place, simple_agent_class):
+        result = self.run_agent(simple_agent_class(place), output_type=Review)
+        assert isinstance(result.output, Review)
+
+    def test_output_is_a_real_pydantic_model(self, place):
+        class ReviewAgent(ModelAgent):
+            model = Place
+            fields = ["name"]
+            output_type = Review
+
+        output = self.run_agent(ReviewAgent(place)).output
+        assert set(output.model_dump()) == {"summary", "score"}

@@ -44,6 +44,7 @@ Example using decorators (pydantic-ai style):
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Sequence
 from decimal import Decimal
 from functools import wraps
@@ -96,6 +97,7 @@ class ModelAgent:
         tools: List of tool classes available to the agent
         _field_sets: Named groups of fields for role-based exposure
         ai_model: The pydantic-ai model name to use (e.g. 'openai:gpt-4o')
+        output_type: Structured output type; None gives plain string output
 
     Decorators:
         @ModelAgent.system_prompt - Register a method as a system prompt provider
@@ -115,6 +117,7 @@ class ModelAgent:
     _field_sets: dict[str, list[str]] = {}
 
     ai_model: ClassVar[str | None] = None
+    output_type: ClassVar[Any] = None
 
     # -------------------------------------------------------------------------
     # Decorators for pydantic-ai style registration
@@ -190,6 +193,7 @@ class ModelAgent:
         instructions: str | list[str] | None = None,
         field_set: str | None = None,
         ai_model: str | None = None,
+        output_type: Any = None,
     ) -> None:
         """
         Initialize a ModelAgent for a specific model instance.
@@ -200,12 +204,14 @@ class ModelAgent:
             instructions: Override or extend the class-level instructions
             field_set: Optional name of a field set to use for schema generation
             ai_model: Override the pydantic-ai model to use (e.g. 'openai:gpt-4o')
+            output_type: Override the structured output type for this agent
         """
         self.instance = instance
         self.field_set = field_set
         self._schema: type[BaseModel] | None = None
         self._pydantic_agent: Any = None
         self._ai_model_override = ai_model
+        self._output_type_override = output_type
 
         # Override class-level prompts/instructions if provided at init
         if system_prompt is not None:
@@ -492,9 +498,29 @@ class ModelAgent:
             values[field_name] = value
         return values
 
-    def _get_ai_model(self) -> str | None:
-        """Resolve the AI model to use, checking instance override then class attribute."""
-        return self._ai_model_override or self.__class__.ai_model
+    def _get_ai_model(self) -> Any:
+        """
+        Resolve the AI model to use.
+
+        Checked in order: the value passed to ``__init__``, the class-level
+        ``ai_model``, then the ``PYDANTIC_AI_MODEL`` environment variable.
+
+        The environment fallback follows the convention pydantic-ai uses in its
+        own examples, which read ``PYDANTIC_AI_MODEL`` to switch providers
+        without editing code. pydantic-ai itself does not read the variable, so
+        honouring it here is what makes that convention work for these agents.
+        """
+        if self._ai_model_override:
+            return self._ai_model_override
+        if self.__class__.ai_model:
+            return self.__class__.ai_model
+        return os.environ.get("PYDANTIC_AI_MODEL") or None
+
+    def _get_output_type(self) -> Any:
+        """Resolve the structured output type, init argument beating the class."""
+        if self._output_type_override is not None:
+            return self._output_type_override
+        return self.__class__.output_type
 
     def _build_pydantic_ai_tools(self) -> list[Any]:
         """
@@ -584,11 +610,19 @@ class ModelAgent:
         """
         from pydantic_ai import Agent
 
+        kwargs: dict[str, Any] = {}
+        output_type = self._get_output_type()
+        if output_type is not None:
+            # Only passed when set; pydantic-ai's default is plain str output
+            # and handing it None would override that.
+            kwargs["output_type"] = output_type
+
         return Agent(
             self._get_ai_model(),
             deps_type=ModelAgentContext,
             capabilities=self._build_capabilities(),
             name=f"{self.__class__.__name__}({self.model.__name__})",
+            **kwargs,
         )
 
     async def run(self, prompt: str, **kwargs: Any) -> Any:
