@@ -22,6 +22,7 @@ from django_model_agent import ModelAgent
 | `_field_sets` | `dict[str, list[str]]` | `{}` | Named groups of fields for role-based exposure |
 | `ai_model` | `str \| None` | `None` | The pydantic-ai model name (e.g. `'openai:gpt-4o'`); falls back to `PYDANTIC_AI_MODEL` |
 | `output_type` | `Any` | `None` | Structured output type; `None` gives plain string output |
+| `usage_limits` | `UsageLimits \| None` | `None` | Default limits; falls back to the `DJANGO_MODEL_AGENT_USAGE_LIMITS` setting |
 
 ### `__init__`
 
@@ -44,6 +45,7 @@ ModelAgent(
 | `field_set` | Name of a field set to use for schema generation |
 | `ai_model` | Override the pydantic-ai model to use |
 | `output_type` | Override the structured output type |
+| `usage_limits` | Override the default usage limits |
 
 ### Properties
 
@@ -287,6 +289,10 @@ Dataclass describing what one run did.
 | `prompt` | `str` | The prompt that drove the run |
 | `field_changes` | `dict[str, dict[str, Any]]` | `{field: {before, after}}` |
 | `tool_calls` | `list[dict[str, Any]]` | `{name, args}` per call |
+| `usage` | `dict[str, int]` | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `requests`, `tool_calls` |
+
+`total_tokens -> int`
+:   Input plus output tokens.
 
 `changed -> bool`
 :   Whether any field changed.

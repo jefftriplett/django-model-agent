@@ -98,6 +98,7 @@ class ModelAgent:
         _field_sets: Named groups of fields for role-based exposure
         ai_model: The pydantic-ai model name to use (e.g. 'openai:gpt-4o')
         output_type: Structured output type; None gives plain string output
+        usage_limits: Default UsageLimits applied to every run
 
     Decorators:
         @ModelAgent.system_prompt - Register a method as a system prompt provider
@@ -118,6 +119,7 @@ class ModelAgent:
 
     ai_model: ClassVar[str | None] = None
     output_type: ClassVar[Any] = None
+    usage_limits: ClassVar[Any] = None
 
     # -------------------------------------------------------------------------
     # Decorators for pydantic-ai style registration
@@ -194,6 +196,7 @@ class ModelAgent:
         field_set: str | None = None,
         ai_model: str | None = None,
         output_type: Any = None,
+        usage_limits: Any = None,
     ) -> None:
         """
         Initialize a ModelAgent for a specific model instance.
@@ -205,6 +208,7 @@ class ModelAgent:
             field_set: Optional name of a field set to use for schema generation
             ai_model: Override the pydantic-ai model to use (e.g. 'openai:gpt-4o')
             output_type: Override the structured output type for this agent
+            usage_limits: Override the default UsageLimits for this agent
         """
         self.instance = instance
         self.field_set = field_set
@@ -212,6 +216,7 @@ class ModelAgent:
         self._pydantic_agent: Any = None
         self._ai_model_override = ai_model
         self._output_type_override = output_type
+        self._usage_limits_override = usage_limits
 
         # Override class-level prompts/instructions if provided at init
         if system_prompt is not None:
@@ -522,6 +527,31 @@ class ModelAgent:
             return self._output_type_override
         return self.__class__.output_type
 
+    def _get_usage_limits(self) -> Any:
+        """
+        Resolve the usage limits for a run.
+
+        Checked in order: the value passed to ``__init__``, the class-level
+        ``usage_limits``, then the ``DJANGO_MODEL_AGENT_USAGE_LIMITS`` Django
+        setting. The setting lets a project cap every agent at once rather than
+        remembering to do it per class.
+        """
+        if self._usage_limits_override is not None:
+            return self._usage_limits_override
+        if self.__class__.usage_limits is not None:
+            return self.__class__.usage_limits
+
+        from django.conf import settings
+
+        return getattr(settings, "DJANGO_MODEL_AGENT_USAGE_LIMITS", None)
+
+    def _run_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Fill in defaults an explicit call did not already provide."""
+        limits = self._get_usage_limits()
+        if limits is not None:
+            kwargs.setdefault("usage_limits", limits)
+        return kwargs
+
     def _build_pydantic_ai_tools(self) -> list[Any]:
         """
         Convert this agent's tools into pydantic-ai Tool objects.
@@ -684,7 +714,7 @@ class ModelAgent:
         return await self._pydantic_agent.run(
             prompt,
             deps=self.context,
-            **kwargs,
+            **self._run_kwargs(kwargs),
         )
 
     def run_sync(self, prompt: str, **kwargs: Any) -> Any:
@@ -703,7 +733,7 @@ class ModelAgent:
         return self._pydantic_agent.run_sync(
             prompt,
             deps=self.context,
-            **kwargs,
+            **self._run_kwargs(kwargs),
         )
 
     def __repr__(self) -> str:

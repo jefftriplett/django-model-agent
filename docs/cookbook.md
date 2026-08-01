@@ -284,6 +284,100 @@ def agent_for(user, place):
 Fields outside the chosen set never reach the model — they are absent from both
 the schema description and the current values.
 
+## Cap spend and track token usage
+
+### Limiting a run
+
+`UsageLimits` stops a run before it gets expensive. Set a default for the whole
+project in settings:
+
+```python
+# settings.py
+from pydantic_ai.usage import UsageLimits
+
+DJANGO_MODEL_AGENT_USAGE_LIMITS = UsageLimits(
+    request_limit=10,
+    tool_calls_limit=20,
+    total_tokens_limit=100_000,
+)
+```
+
+or per agent, or per run:
+
+```python
+class PlaceAgent(ModelAgent):
+    model = Place
+    usage_limits = UsageLimits(tool_calls_limit=5)      # per agent
+
+await agent.run("...", usage_limits=UsageLimits(request_limit=3))   # per run
+```
+
+First match wins: run argument, then `__init__`, then the class attribute, then
+the setting.
+
+Exceeding a limit raises `UsageLimitExceeded`:
+
+```python
+from pydantic_ai.usage import UsageLimitExceeded
+
+try:
+    result = await PlaceAgent(place).run("Tidy up this listing.")
+except UsageLimitExceeded:
+    logger.warning("Agent hit its budget on place %s", place.pk)
+    return
+```
+
+`tool_calls_limit` deserves particular attention here. Tools in this library hit
+the ORM, so a model that loops on a tool is generating database load, not just
+token spend.
+
+### Recording what a run cost
+
+`DjangoAuditCapability` puts usage on every record:
+
+```python
+def persist(record):
+    AgentRun.objects.create(
+        object_pk=str(record.instance_pk),
+        model_name=record.model_class,
+        input_tokens=record.usage.get("input_tokens", 0),
+        output_tokens=record.usage.get("output_tokens", 0),
+        cached_tokens=record.usage.get("cache_read_tokens", 0),
+        requests=record.usage.get("requests", 0),
+        tool_calls=record.usage.get("tool_calls", 0),
+    )
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+
+    def get_extra_capabilities(self):
+        return [DjangoAuditCapability(log_to="callback", callback=persist)]
+```
+
+`record.total_tokens` is the input plus output shorthand. Note that
+`cache_read_tokens` are usually billed at a lower rate, so subtract them before
+turning tokens into money.
+
+With the rows in your database, cost per object is a normal query:
+
+```python
+from django.db.models import Sum
+
+AgentRun.objects.filter(model_name="Place").aggregate(
+    total_in=Sum("input_tokens"),
+    total_out=Sum("output_tokens"),
+)
+```
+
+Reading `result.usage` directly works too, when you only need one run:
+
+```python
+result = await PlaceAgent(place).run("Summarise.")
+result.usage.input_tokens
+result.usage.requests
+```
+
 ## Record an audit trail in your own model
 
 `DjangoAuditCapability` hands each run's changes to a callback. Persist them

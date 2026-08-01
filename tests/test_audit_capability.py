@@ -213,3 +213,34 @@ class TestLogTargets:
     def test_callback_mode_requires_callback(self):
         with pytest.raises(ValueError, match="requires a callback"):
             DjangoAuditCapability(log_to="callback")
+
+
+class TestUsageCapture:
+    """Token and request counts land on the audit record."""
+
+    def test_usage_recorded(self, place):
+        records: list[AuditRecord] = []
+        run(build_agent(records), place)
+        usage = records[0].usage
+        assert usage["requests"] >= 1
+        assert usage["input_tokens"] > 0
+
+    def test_total_tokens_sums_input_and_output(self, place):
+        records: list[AuditRecord] = []
+        run(build_agent(records), place)
+        record = records[0]
+        assert record.total_tokens == (
+            record.usage["input_tokens"] + record.usage["output_tokens"]
+        )
+
+    def test_tool_calls_counted(self, place):
+        records: list[AuditRecord] = []
+        run(build_agent(records, tools=[RenameTool]), place)
+        assert records[0].usage["tool_calls"] >= 1
+
+    def test_usage_empty_when_result_has_none(self):
+        cap = DjangoAuditCapability(log_to="none")
+        assert cap._usage(object()) == {}
+
+    def test_total_tokens_zero_without_usage(self):
+        assert AuditRecord(instance_pk=1, model_class="Place", prompt="p").total_tokens == 0
