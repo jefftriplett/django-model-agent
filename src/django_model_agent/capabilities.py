@@ -205,6 +205,7 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
         tools: ``ModelTool`` subclasses to expose
         tool_funcs: Unbound ``@ModelAgent.tool`` methods to expose
         instructions: Static instruction text
+        dynamic_instructions: Callable returning text to resolve per request
     """
 
     def __init__(
@@ -216,6 +217,7 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
         tools: Sequence[type] = (),
         tool_funcs: Sequence[Callable] = (),
         instructions: str | Sequence[str] = "",
+        dynamic_instructions: Callable[[], str] | None = None,
         id: str | None = None,
     ) -> None:
         self.model_class = model_class
@@ -224,6 +226,7 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
         self.tools = list(tools)
         self.tool_funcs = list(tool_funcs)
         self.instructions = instructions
+        self.dynamic_instructions = dynamic_instructions
         self.id = id
 
     def _fields(self) -> list[models.Field]:
@@ -257,11 +260,18 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
         values on turn five.
         """
         static = self._static_instructions()
+        # Computed once on purpose: which fields exist does not change between
+        # runs, only their values do.
         schema = self.schema_description()
 
         def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
             instance = ctx.deps.instance
-            parts = [*static, schema]
+            parts = [*static]
+            if self.dynamic_instructions is not None:
+                text = self.dynamic_instructions()
+                if text:
+                    parts.append(text)
+            parts.append(schema)
             parts.append(f"Current values: {self.current_values(instance)}")
             return "\n\n".join(parts)
 
