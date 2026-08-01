@@ -17,6 +17,7 @@ Example:
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
@@ -302,8 +303,29 @@ class DiffAwareUpdateTool(ModelTool):
     Tool that proposes changes instead of applying them directly.
 
     Changes are collected and can be reviewed before application.
-    Useful for multi-agent workflows where one agent proposes and another approves.
+
+    Deprecated:
+        Use ``requires_confirmation`` for gating a single call on a human, or
+        persist proposals to your own model for batch review.
+
+        This class predates pydantic-ai's deferred tool support and works
+        poorly through an agent: tools are constructed per call, so
+        ``proposed_changes`` never accumulates past one call and the caller
+        cannot reach the instance afterwards to read them. It behaves as
+        intended only when you drive the tool yourself.
     """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        warnings.warn(
+            f"{cls.__name__} subclasses DiffAwareUpdateTool, which is deprecated. "
+            "Set requires_confirmation = True to gate a tool on human approval, "
+            "or have the tool persist proposals to your own model for batch "
+            "review. Proposals held on the tool instance do not survive an "
+            "agent run.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def __init__(self, context: ModelAgentContext) -> None:
         super().__init__(context)

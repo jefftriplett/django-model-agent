@@ -828,8 +828,17 @@ class TestPlaceAgentExamples:
         )
 
         assert result.success is True
-        assert len(tool.proposed_changes) == 1
-        assert tool.proposed_changes[0].new_value == "https://ubereats.com/new"
+        assert result.data["field"] == "ubereats_url"
+        assert result.data["url"] == "https://ubereats.com/new"
+
+        place.refresh_from_db()
+        assert place.ubereats_url == "https://ubereats.com/new"
+
+    def test_propose_delivery_url_requires_approval(self, place):
+        """The tool is gated, so an agent must get a human's sign-off first."""
+        from django_model_agent.examples import ProposeDeliveryUrlTool
+
+        assert ProposeDeliveryUrlTool.requires_confirmation is True
 
     def test_propose_delivery_url_invalid_service(self, place):
         """Test ProposeDeliveryUrlTool with invalid service."""
