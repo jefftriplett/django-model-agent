@@ -46,6 +46,13 @@ all of that, similar to how Django Ninja's `ModelSchema` handles serialization.
 
     [:octicons-arrow-right-24: Tools](tools.md)
 
+-   __Capabilities__
+
+    Compose model schema, state awareness, memory, and auditing — or write
+    your own.
+
+    [:octicons-arrow-right-24: Capabilities](capabilities.md)
+
 -   __Persistent memory__
 
     Attach memory to any Django model instance via the contenttypes framework.
@@ -60,6 +67,34 @@ all of that, similar to how Django Ninja's `ModelSchema` handles serialization.
     [:octicons-arrow-right-24: API reference](reference.md)
 
 </div>
+
+## Tools and capabilities
+
+Two building blocks come up throughout these docs. They are layers, not
+alternatives — an agent normally uses both.
+
+| | What it is | Answers |
+|---|---|---|
+| **Tool** | One callable the model can invoke | *What can the model do?* |
+| **Capability** | A bundle of agent behaviour — instructions, tools, model settings, and lifecycle hooks | *What is this agent?* |
+
+A tool is a function with a schema. `GetPlaceInfoTool` reads some fields and
+returns them; that is the whole job.
+
+A capability is bigger. It can carry a whole set of tools, but it can also add
+instructions, change model settings, and hook into the run — things a lone
+function has nowhere to put. `DjangoFSMCapability` both tells the agent *"this
+place is in `draft`, valid transitions are…"* and hides the tools that state
+forbids. A tool could only ever do the second half.
+
+Rule of thumb: **if it is about one function, it is a tool; if it is about the
+agent, it is a capability.**
+
+Both are pydantic-ai concepts, not inventions of this library —
+`pydantic_ai.Agent` accepts `tools=`, `toolsets=`, and `capabilities=`.
+
+[:octicons-arrow-right-24: Tools](tools.md) &nbsp;·&nbsp;
+[:octicons-arrow-right-24: Capabilities](capabilities.md)
 
 ## Install
 

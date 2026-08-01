@@ -9,6 +9,40 @@ capabilities, and use them with a plain `pydantic_ai.Agent` if you never wanted
 `ModelAgent` builds these for you. You only need this page if you want to add
 capabilities to an agent, or skip `ModelAgent` entirely.
 
+## Capabilities vs tools
+
+If you have read the [Tools](tools.md) page, here is how the two relate.
+
+A **tool** is one callable the model can invoke — a function with a schema.
+A **capability** is a bundle of agent behaviour. It can *contain* tools, and it
+can also do four things a tool cannot:
+
+| | Tool | Capability |
+|---|---|---|
+| Be called by the model | yes | via the tools it carries |
+| Contribute instructions | no | `get_instructions()` |
+| Set model settings or pick the model | no | `get_model_settings()`, `get_model()` |
+| Show or hide tools per request | per-tool `prepare` | `prepare_tools()` |
+| Hook the run lifecycle | no | `before_run`, `after_run`, `wrap_run` |
+| Keep per-run state | no | `for_run()` |
+
+So they are layers, not alternatives. `GetPlaceInfoTool` stays a tool — it reads
+some fields and returns them. `DjangoFSMCapability` has to be a capability,
+because it both hides state-illegal tools *and* tells the agent which state the
+instance is in; a tool has nowhere to put that second part.
+
+Both are pydantic-ai concepts. `pydantic_ai.Agent` accepts `tools=`,
+`toolsets=`, and `capabilities=`, and pydantic-ai's own extensions — `MCP`,
+`Instrumentation`, `Thinking`, `ImageGeneration` — are all capabilities, because
+none of them are expressible as a single function.
+
+!!! note "Where the line blurs"
+
+    `pydantic_ai.Tool` accepts a `prepare` hook — `(ctx, tool_def)` returning
+    `None` to hide that tool — which overlaps with a capability's
+    `prepare_tools()`. Filtering can legitimately live in either place. This
+    library currently does it in `DjangoFSMCapability`.
+
 ## The four capabilities
 
 | Capability | What it adds |

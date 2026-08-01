@@ -5,6 +5,34 @@ tools that operate on Django model instances. Tools integrate with pydantic-ai
 through `build_agent()`, which converts them into pydantic-ai compatible tool
 functions automatically.
 
+## Tools vs capabilities
+
+A **tool** is one callable the model can invoke. It takes arguments, does
+something, and returns a result. That is the whole contract.
+
+A [**capability**](capabilities.md) is a bundle of agent behaviour. It can carry
+tools, but it can also contribute instructions, set model settings, and hook the
+run lifecycle.
+
+Reach for a capability instead of a tool when the behaviour is not really about
+one function:
+
+| You want to… | Use |
+|---|---|
+| Let the model look something up or change a field | a tool |
+| Tell the model something about the instance | a capability (instructions) |
+| Show or hide tools based on state | a capability (`prepare_tools`) |
+| Do something before or after every run | a capability (`before_run` / `after_run`) |
+| Keep state across a run | a capability (`for_run`) |
+
+`DjangoFSMCapability` is the clearest case. It hides tools the current state
+forbids *and* tells the agent which state it is in — a tool has nowhere to put
+that second half.
+
+Tools you write here are collected into a toolset by
+[`DjangoModelCapability`](capabilities.md#djangomodelcapability), so the two
+layers meet there.
+
 ## Tool hierarchy
 
 ```
