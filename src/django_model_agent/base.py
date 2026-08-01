@@ -550,6 +550,54 @@ class ModelAgent:
         """
         return []
 
+    def _static_instructions(self) -> list[str]:
+        """
+        Instruction text that cannot change between runs.
+
+        Only the class-level attributes qualify. Decorated methods and the
+        template are resolved per request by ``_dynamic_instructions``.
+        """
+        parts: list[str] = []
+        for source in (self._system_prompts, self._instructions):
+            if not source:
+                continue
+            if isinstance(source, list):
+                parts.extend(text.strip() for text in source if text)
+            else:
+                parts.append(source.strip())
+        return parts
+
+    def _dynamic_instructions(self) -> str:
+        """
+        Instruction text resolved fresh on every request.
+
+        Decorated ``@system_prompt`` / ``@instructions`` methods and the
+        rendered template all read from ``self.instance``, so evaluating them
+        once at build time would leave them contradicting the field values the
+        capability injects live.
+        """
+        parts: list[str] = []
+
+        for func in self._system_prompt_funcs:
+            result = func(self)
+            if result:
+                parts.append(str(result).strip())
+
+        if self._instructions_template:
+            rendered = self._render_template(
+                self._instructions_template,
+                context={"instance": self.instance, "schema": self.schema},
+            )
+            if rendered:
+                parts.append(rendered.strip())
+
+        for func in self._instructions_funcs:
+            result = func(self)
+            if result:
+                parts.append(str(result).strip())
+
+        return "\n\n".join(parts)
+
     def _build_capabilities(self) -> list[Any]:
         """
         Compose the capabilities backing this agent.
@@ -565,12 +613,6 @@ class ModelAgent:
         )
         from .memory import AgentMemoryMixin
 
-        instruction_parts = [
-            text
-            for text in (self.get_system_prompts(), self.get_instructions())
-            if text
-        ]
-
         capabilities: list[Any] = [
             DjangoModelCapability(
                 model_class=self.model,
@@ -578,7 +620,8 @@ class ModelAgent:
                 exclude=self.exclude,
                 tools=self.tools,
                 tool_funcs=self._tool_funcs,
-                instructions=instruction_parts,
+                instructions=self._static_instructions(),
+                dynamic_instructions=self._dynamic_instructions,
             )
         ]
 

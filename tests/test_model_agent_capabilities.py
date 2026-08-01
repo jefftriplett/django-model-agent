@@ -360,3 +360,101 @@ class TestStructuredOutput:
 
         output = self.run_agent(ReviewAgent(place)).output
         assert set(output.model_dump()) == {"summary", "score"}
+
+
+class TestInstructionsAreFresh:
+    """
+    Decorated prompt methods and templates must resolve per request.
+
+    They used to be flattened to text at build time, which left them
+    contradicting the field values the capability injects live.
+    """
+
+    def test_decorated_instructions_reevaluated(self, place):
+        calls = []
+
+        class Probe(ModelAgent):
+            model = Place
+            fields = ["name"]
+
+            @ModelAgent.instructions
+            def hint(self) -> str:
+                calls.append(self.instance.name)
+                return f"SAW:{self.instance.name}"
+
+        agent = Probe(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            place.name = "First"
+            first = instructions_sent(agent.run_sync("one"))
+            place.name = "Second"
+            second = instructions_sent(agent.run_sync("two"))
+
+        assert len(calls) == 2, "decorated method should run once per request"
+        assert "SAW:First" in first
+        assert "SAW:Second" in second
+        assert "SAW:First" not in second
+
+    def test_decorated_system_prompt_reevaluated(self, place):
+        class Probe(ModelAgent):
+            model = Place
+            fields = ["name"]
+
+            @ModelAgent.system_prompt
+            def hint(self) -> str:
+                return f"SAW:{self.instance.name}"
+
+        agent = Probe(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            place.name = "Before"
+            first = instructions_sent(agent.run_sync("one"))
+            place.name = "After"
+            second = instructions_sent(agent.run_sync("two"))
+
+        assert "SAW:Before" in first
+        assert "SAW:After" in second
+        assert "SAW:Before" not in second
+
+    def test_decorated_text_agrees_with_current_values(self, place):
+        """The failure mode worth guarding: context contradicting itself."""
+
+        class Probe(ModelAgent):
+            model = Place
+            fields = ["name"]
+
+            @ModelAgent.instructions
+            def hint(self) -> str:
+                return f"The name is {self.instance.name}."
+
+        agent = Probe(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            place.name = "Renamed"
+            text = instructions_sent(agent.run_sync("go"))
+
+        assert "The name is Renamed." in text
+        assert "'name': 'Renamed'" in text
+
+    def test_static_class_attributes_still_sent(self, place):
+        class Probe(ModelAgent):
+            model = Place
+            fields = ["name"]
+            _system_prompts = "Static prompt."
+            _instructions = "Static guidance."
+
+        agent = Probe(place)
+        pai = agent.build_agent()
+        agent._pydantic_agent = pai
+
+        with pai.override(model=TestModel()):
+            text = instructions_sent(agent.run_sync("go"))
+
+        assert "Static prompt." in text
+        assert "Static guidance." in text
