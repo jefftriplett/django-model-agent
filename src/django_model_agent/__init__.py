@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base import ModelAgent, ModelAgentContext
 from .capabilities import (
     DjangoFSMCapability,
+    DjangoMemoryCapability,
     DjangoModelCapability,
     model_tools_to_toolset,
 )
@@ -10,6 +11,7 @@ from .tools import ModelTool
 
 __all__ = [
     "DjangoFSMCapability",
+    "DjangoMemoryCapability",
     "DjangoModelCapability",
     "ModelAgent",
     "ModelAgentContext",
