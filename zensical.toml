@@ -2,7 +2,7 @@
 site_name = "django-model-agent"
 site_description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
 site_author = "Jeff Triplett"
-site_url = "https://jefftriplett.github.io/django-model-agent/"
+site_url = "https://django-model-agent.readthedocs.io/en/latest/"
 repo_url = "https://github.com/jefftriplett/django-model-agent"
 repo_name = "jefftriplett/django-model-agent"
 copyright = "Copyright &copy; 2026 Jeff Triplett"

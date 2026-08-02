@@ -159,9 +159,9 @@ format, a Markdown convention suited to LLMs and AI coding assistants.
 
 Two files are published:
 
-- [`llms.txt`](https://jefftriplett.github.io/django-model-agent/llms.txt): a
+- [`llms.txt`](https://django-model-agent.readthedocs.io/en/latest/llms.txt): a
   short description of the project plus links to each section.
-- [`llms-full.txt`](https://jefftriplett.github.io/django-model-agent/llms-full.txt):
+- [`llms-full.txt`](https://django-model-agent.readthedocs.io/en/latest/llms-full.txt):
   the same index with the content of every page inlined.
 
 ## Where to next
