@@ -11,7 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.13", "3.14", "3.14t"]
+
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +25,7 @@ jobs:
           enable-cache: true
 
       - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }} --prerelease allow
 
       - name: Install dependencies
         run: uv sync --group dev

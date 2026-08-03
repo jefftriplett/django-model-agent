@@ -18,6 +18,12 @@ dependencies = [
   "pydantic>=2.0",
   "pydantic-ai>=2.22"
 ]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Free Threading :: 3 - Stable",
+]
 description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
 license = "PolyForm-Noncommercial-1.0.0"
 name = "django-model-agent"

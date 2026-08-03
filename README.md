@@ -184,7 +184,7 @@ class GetHoursTool(ReadOnlyTool):
 
 ## Local Development
 
-Python `3.13` is currently required.
+Python `3.13+` is currently required, including free-threaded (`t`) builds.
 
 ```bash
 uv sync --group dev
