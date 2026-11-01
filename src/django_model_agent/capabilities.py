@@ -28,6 +28,7 @@ import inspect
 import json
 import logging
 from collections.abc import Callable, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from decimal import Decimal
@@ -222,6 +223,32 @@ def _with_ctx_signature(params: list[Any]) -> Any:
     return inspect.Signature([ctx_param, *normalised])
 
 
+@contextmanager
+def _closing_new_connections():
+    """
+    Close the database connections a sync tool call opened.
+
+    pydantic-ai runs sync tools in worker threads, and Django opens a
+    connection per thread that nothing else closes. Only connections that
+    were not open before the call are closed, so a thread that already held
+    one -- possibly inside a transaction -- is left as it was.
+    """
+    from django.db import connections
+
+    already_open = {
+        conn.alias for conn in connections.all() if conn.connection is not None
+    }
+    try:
+        yield
+    finally:
+        for conn in connections.all():
+            if conn.alias in already_open or conn.connection is None:
+                continue
+            if conn.in_atomic_block:
+                continue
+            conn.close()
+
+
 def _tool_output(result: Any) -> str:
     """
     The text the model receives from a tool.
@@ -266,7 +293,8 @@ def _tool_from_class(tool_cls: type) -> Tool:
     else:
 
         def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
-            return _tool_output(tool_cls(ctx.deps)(**kwargs))
+            with _closing_new_connections():
+                return _tool_output(tool_cls(ctx.deps)(**kwargs))
 
     tool_func.__name__ = tool_cls.name
     tool_func.__qualname__ = tool_cls.name
@@ -330,7 +358,8 @@ def _tool_from_func(func: Callable) -> Tool:
     else:
 
         def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
-            return str(call(ctx, kwargs))
+            with _closing_new_connections():
+                return str(call(ctx, kwargs))
 
     tool_func.__name__ = func.__name__
     tool_func.__qualname__ = func.__qualname__
