@@ -386,8 +386,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "django", specifier = ">=4.2" },
-    { name = "pydantic", specifier = ">=2.0" },
+    { name = "django", specifier = ">=5.2" },
+    { name = "pydantic", specifier = ">=2.12" },
     { name = "pydantic-ai", specifier = ">=2.22" },
 ]
 

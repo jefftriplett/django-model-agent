@@ -53,3 +53,23 @@ jobs:
 
       - name: Build docs
         run: uv run --group dev zensical build --clean --strict
+
+  test-lowest:
+    # Runs against the oldest versions pyproject.toml allows, since uv.lock
+    # only covers the newest.
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.13"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Run tests on lowest direct dependencies
+        run: uv run --resolution lowest-direct --isolated pytest -v
