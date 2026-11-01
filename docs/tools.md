@@ -52,12 +52,12 @@ from django_model_agent.tools import ModelTool, ToolResult
 
 
 class WordCountTool(ModelTool):
-    name = "word_count"                                    # (1)
-    description = "Count the words in this place's description"   # (2)
+    name = "word_count"  # (1)
+    description = "Count the words in this place's description"  # (2)
 
-    def execute(self, **kwargs) -> ToolResult:             # (3)
-        words = len(self.instance.description.split())     # (4)
-        return ToolResult(                                 # (5)
+    def execute(self, **kwargs) -> ToolResult:  # (3)
+        words = len(self.instance.description.split())  # (4)
+        return ToolResult(  # (5)
             success=True,
             message=f"{words} words",
             data={"word_count": words},
@@ -132,6 +132,7 @@ both sync and async execution paths.
 ```python
 from django_model_agent.tools import ModelTool, ToolResult
 
+
 class CheckAvailabilityTool(ModelTool):
     name = "check_availability"
     description = "Check if this place is currently open"
@@ -173,7 +174,7 @@ result = await PlaceAgent(place).run("Publish this listing.")
 
 if isinstance(result.output, DeferredToolRequests):
     for call in result.output.approvals:
-        ...   # show it to a human, store it, come back later
+        ...  # show it to a human, store it, come back later
 ```
 
 This maps onto pydantic-ai's `requires_approval`, so it is the same
@@ -256,6 +257,7 @@ For tools that only read data and never modify the instance:
 ```python
 from django_model_agent.tools import ReadOnlyTool
 
+
 class GetContactInfoTool(ReadOnlyTool):
     name = "get_contact_info"
     description = "Get the contact information for this place"
@@ -307,6 +309,7 @@ update, computes a diff, and calls `save()` automatically:
 
 ```python
 from django_model_agent.tools import UpdateTool
+
 
 class UpdateDescriptionTool(UpdateTool):
     name = "update_description"
@@ -360,11 +363,14 @@ reviews them:
 ```python
 from django_model_agent.tools import DiffAwareUpdateTool, ToolResult
 
+
 class ProposeUrlChangeTool(DiffAwareUpdateTool):
     name = "propose_url_change"
     description = "Propose a URL update for review"
 
-    def execute(self, *, field: str, url: str, reason: str = "", **kwargs) -> ToolResult:
+    def execute(
+        self, *, field: str, url: str, reason: str = "", **kwargs
+    ) -> ToolResult:
         self.propose_change(field, url, reason)
         return ToolResult(
             success=True,

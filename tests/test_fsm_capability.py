@@ -12,8 +12,6 @@ from typing import Any, ClassVar
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgentContext
 from django_model_agent.capabilities import (
     DjangoFSMCapability,
@@ -21,6 +19,7 @@ from django_model_agent.capabilities import (
     _state_prepare,
 )
 from django_model_agent.tools import ModelTool, ReadOnlyTool, ToolResult
+from tests.models import Place
 
 
 class AlwaysTool(ReadOnlyTool):
@@ -63,7 +62,9 @@ def build_agent(**fsm_kwargs) -> Agent:
         TestModel(),
         deps_type=ModelAgentContext,
         capabilities=[
-            DjangoModelCapability(model_class=Place, fields=["name", "state"], tools=tools),
+            DjangoModelCapability(
+                model_class=Place, fields=["name", "state"], tools=tools
+            ),
             DjangoFSMCapability(tools=tools, **fsm_kwargs),
         ],
     )
@@ -83,7 +84,9 @@ def tools_offered(agent: Agent, instance: Place) -> set[str]:
 def instructions_sent(agent: Agent, instance: Place) -> str:
     result = agent.run_sync("hi", deps=ModelAgentContext(instance=instance, agent=None))
     return "\n".join(
-        m.instructions for m in result.all_messages() if getattr(m, "instructions", None)
+        m.instructions
+        for m in result.all_messages()
+        if getattr(m, "instructions", None)
     )
 
 
@@ -196,7 +199,9 @@ class TestEnforcementBackstop:
                 )
             ],
         )
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
         called = {
             p.tool_name
             for m in result.all_messages()

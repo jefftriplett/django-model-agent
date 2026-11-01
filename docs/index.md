@@ -5,6 +5,7 @@ A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents
 ```python
 from django_model_agent import ModelAgent
 
+
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours"]
@@ -15,6 +16,7 @@ class RestaurantAgent(ModelAgent):
     def get_hours(self) -> str:
         """Get the restaurant hours."""
         return str(self.instance.hours)
+
 
 restaurant = Restaurant.objects.get(pk=123)
 agent = RestaurantAgent(restaurant)
@@ -123,6 +125,7 @@ INSTALLED_APPS = [
 ```python
 from django_model_agent import ModelAgent
 
+
 # Declare the agent
 class PlaceAgent(ModelAgent):
     model = Place
@@ -138,14 +141,15 @@ class PlaceAgent(ModelAgent):
         """Get the phone number for this place."""
         return self.instance.phone or "No phone on file"
 
+
 # Use it
 place = Place.objects.get(pk=42)
 agent = PlaceAgent(place, ai_model="openai:gpt-4o")
 
 # Inspect without running
-agent.schema              # Pydantic model with name, address, phone, state
-agent.get_system_prompts() # Combined system prompt text
-agent.get_tools()          # List of tool callables
+agent.schema  # Pydantic model with name, address, phone, state
+agent.get_system_prompts()  # Combined system prompt text
+agent.get_tools()  # List of tool callables
 
 # Run a prompt
 result = await agent.run("What is the phone number?")

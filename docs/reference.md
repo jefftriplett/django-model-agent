@@ -27,14 +27,17 @@ from django_model_agent import ModelAgent
 ### `__init__`
 
 ```python
-ModelAgent(
+def __init__(
+    self,
     instance: models.Model,
     *,
     system_prompt: str | list[str] | None = None,
     instructions: str | list[str] | None = None,
     field_set: str | None = None,
     ai_model: str | None = None,
-)
+    output_type: Any = None,
+    usage_limits: UsageLimits | None = None,
+) -> None: ...
 ```
 
 | Parameter | Description |

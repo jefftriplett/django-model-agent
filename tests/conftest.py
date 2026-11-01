@@ -6,9 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
+from tests.models import Place
 
 
 @pytest.fixture

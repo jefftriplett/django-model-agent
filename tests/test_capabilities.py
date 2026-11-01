@@ -15,8 +15,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.toolsets import FunctionToolset
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent, ModelAgentContext
 from django_model_agent.capabilities import (
     DjangoModelCapability,
@@ -25,6 +23,7 @@ from django_model_agent.capabilities import (
     model_tools_to_toolset,
 )
 from django_model_agent.tools import ReadOnlyTool
+from tests.models import Place
 
 
 class NameTool(ReadOnlyTool):
@@ -38,7 +37,9 @@ class NameTool(ReadOnlyTool):
 def instructions_sent(result) -> str:
     """The instructions the model actually received across a run."""
     return "\n".join(
-        m.instructions for m in result.all_messages() if getattr(m, "instructions", None)
+        m.instructions
+        for m in result.all_messages()
+        if getattr(m, "instructions", None)
     )
 
 
@@ -73,7 +74,9 @@ class TestToolset:
         assert cap.get_toolset() is None
 
     def test_toolset_present_when_tools_given(self):
-        cap = DjangoModelCapability(model_class=Place, fields=["name"], tools=[NameTool])
+        cap = DjangoModelCapability(
+            model_class=Place, fields=["name"], tools=[NameTool]
+        )
         assert cap.get_toolset() is not None
 
 
@@ -100,27 +103,37 @@ class TestStandaloneAgent:
     """The capability works with a plain pydantic_ai.Agent, no ModelAgent."""
 
     def build(self, **kwargs) -> Agent:
-        cap = DjangoModelCapability(model_class=Place, fields=["name", "address"], **kwargs)
+        cap = DjangoModelCapability(
+            model_class=Place, fields=["name", "address"], **kwargs
+        )
         return Agent(TestModel(), deps_type=ModelAgentContext, capabilities=[cap])
 
     def test_runs_without_model_agent(self, place):
         agent = self.build()
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
         assert result.output is not None
 
     def test_instructions_include_current_values(self, place):
         agent = self.build()
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
         assert place.name in instructions_sent(result)
 
     def test_static_instructions_included(self, place):
         agent = self.build(instructions="You help with places.")
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
         assert "You help with places." in instructions_sent(result)
 
     def test_model_tool_is_callable(self, place):
         agent = self.build(tools=[NameTool])
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
         returns = [
             p.content
             for m in result.all_messages()
@@ -177,7 +190,9 @@ class TestInstanceIndependence:
         agent = Agent(TestModel(), deps_type=ModelAgentContext, capabilities=[cap])
 
         place.name = "Historic Name"
-        result = agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "hi", deps=ModelAgentContext(instance=place, agent=None)
+        )
 
         parts_text = "".join(
             str(p) for m in result.all_messages() for p in getattr(m, "parts", [])

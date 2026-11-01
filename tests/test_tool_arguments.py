@@ -12,11 +12,10 @@ from typing import Any, ClassVar
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
 from django_model_agent.capabilities import model_tools_to_toolset
 from django_model_agent.tools import ModelTool, ReadOnlyTool, ToolResult, UpdateTool
+from tests.models import Place
 
 
 def properties(tool) -> dict[str, Any]:
@@ -68,7 +67,9 @@ class TestModelToolArguments:
             name: ClassVar[str] = "typed"
             description: ClassVar[str] = "Typed arguments"
 
-            def execute(self, *, count: int = 1, label: str = "a", **kwargs: Any) -> ToolResult:
+            def execute(
+                self, *, count: int = 1, label: str = "a", **kwargs: Any
+            ) -> ToolResult:
                 return ToolResult(success=True, message="ok")
 
         props = schema_for(TypedTool)

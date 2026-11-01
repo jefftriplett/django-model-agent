@@ -14,8 +14,6 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgentContext
 from django_model_agent.capabilities import (
     AuditRecord,
@@ -23,6 +21,7 @@ from django_model_agent.capabilities import (
     DjangoModelCapability,
 )
 from django_model_agent.tools import UpdateTool
+from tests.models import Place
 
 # transaction=True is required, not incidental: UpdateTool saves the instance
 # from the thread pydantic-ai runs sync tools on. The default transaction-
@@ -51,10 +50,10 @@ def build_agent(records: list[AuditRecord], tools=(), **kwargs) -> Agent:
         TestModel(),
         deps_type=ModelAgentContext,
         capabilities=[
-            DjangoModelCapability(model_class=Place, fields=["name"], tools=list(tools)),
-            DjangoAuditCapability(
-                log_to="callback", callback=records.append, **kwargs
+            DjangoModelCapability(
+                model_class=Place, fields=["name"], tools=list(tools)
             ),
+            DjangoAuditCapability(log_to="callback", callback=records.append, **kwargs),
         ],
     )
 
@@ -243,4 +242,7 @@ class TestUsageCapture:
         assert cap._usage(object()) == {}
 
     def test_total_tokens_zero_without_usage(self):
-        assert AuditRecord(instance_pk=1, model_class="Place", prompt="p").total_tokens == 0
+        assert (
+            AuditRecord(instance_pk=1, model_class="Place", prompt="p").total_tokens
+            == 0
+        )

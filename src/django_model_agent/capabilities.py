@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from django.db import models
 from pydantic_ai import RunContext, Tool
@@ -88,7 +88,7 @@ def field_python_type(field: models.Field) -> Any:
         return str
 
     if getattr(field, "null", False):
-        return Optional[python_type]
+        return python_type | None
     return python_type
 
 
@@ -803,7 +803,7 @@ class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
 
     def _tool_calls(self, result: Any) -> list[dict[str, Any]]:
         calls: list[dict[str, Any]] = []
-        for message in getattr(result, "all_messages", lambda: [])():
+        for message in getattr(result, "all_messages", list)():
             for part in getattr(message, "parts", []):
                 if type(part).__name__ == "ToolCallPart":
                     calls.append({"name": part.tool_name, "args": part.args})

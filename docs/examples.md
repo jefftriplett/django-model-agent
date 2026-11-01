@@ -27,7 +27,9 @@ from django_model_agent.tools import ModelTool, ReadOnlyTool, ToolResult
 
 class GeocodeTool(ReadOnlyTool):
     name: ClassVar[str] = "geocode_address"
-    description: ClassVar[str] = "Look up latitude and longitude for this place's address"
+    description: ClassVar[str] = (
+        "Look up latitude and longitude for this place's address"
+    )
 
     def read(self, **kwargs: Any) -> dict[str, Any]:
         if not self.instance.address:
@@ -48,11 +50,16 @@ class ForecastTool(ModelTool):
     name: ClassVar[str] = "get_forecast"
     description: ClassVar[str] = "Get today's forecast for a latitude and longitude"
 
-    def execute(self, *, lat: float = 0.0, lng: float = 0.0, **kwargs: Any) -> ToolResult:
+    def execute(
+        self, *, lat: float = 0.0, lng: float = 0.0, **kwargs: Any
+    ) -> ToolResult:
         response = httpx.get(
             "https://api.tomorrow.io/v4/weather/forecast",
-            params={"location": f"{lat},{lng}", "timesteps": "1d",
-                    "apikey": settings.WEATHER_API_KEY},
+            params={
+                "location": f"{lat},{lng}",
+                "timesteps": "1d",
+                "apikey": settings.WEATHER_API_KEY,
+            },
             timeout=10,
         )
         today = response.json()["timelines"]["daily"][0]["values"]
@@ -124,7 +131,7 @@ class ExtractedListing(BaseModel):
 
 class ListingExtractor(ModelAgent):
     model = Place
-    fields = ["name"]          # the agent barely needs the instance here
+    fields = ["name"]  # the agent barely needs the instance here
     output_type = ExtractedListing
     _system_prompts = (
         "Extract venue details from the text you are given. Leave a field null "

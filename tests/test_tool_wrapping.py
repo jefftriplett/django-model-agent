@@ -12,10 +12,9 @@ from typing import Any
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent, ModelAgentContext, model_tools_to_toolset
 from django_model_agent.tools import ModelTool, ReadOnlyTool, ToolResult
+from tests.models import Place
 
 
 def tool_returns(result) -> dict[str, str]:

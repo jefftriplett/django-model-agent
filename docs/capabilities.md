@@ -130,7 +130,7 @@ Describes the model to the agent and exposes its tools.
 ```python
 DjangoModelCapability(
     model_class=Place,
-    fields=["name", "address"],   # None exposes every field
+    fields=["name", "address"],  # None exposes every field
     exclude=["internal_notes"],
     tools=[GetPlaceInfoTool],
     instructions="You are a helpful assistant.",
@@ -166,9 +166,9 @@ class PlaceAgent(ModelAgent):
 
 
 agent = PlaceAgent(place)
-await agent.run("...")            # "The state is draft."
+await agent.run("...")  # "The state is draft."
 place.state = "public"
-await agent.run("...")            # "The state is public."
+await agent.run("...")  # "The state is public."
 ```
 
 The same applies to a template with conditionals on instance state — it is
@@ -187,13 +187,15 @@ Inside a capability the same distinction applies, and it is easy to trip over:
 
 ```python
 def get_instructions(self):
-    place = self.instance                       # WRONG on two counts
-    return f"Reviewing {place.name}."           # evaluated once, and there is
-                                                # no instance at build time
+    place = self.instance  # WRONG on two counts
+    return f"Reviewing {place.name}."  # evaluated once, and there is
+    # no instance at build time
+
 
 def get_instructions(self):
     def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
-        return f"Reviewing {ctx.deps.instance.name}."   # evaluated per request
+        return f"Reviewing {ctx.deps.instance.name}."  # evaluated per request
+
     return _instructions
 ```
 
@@ -206,10 +208,12 @@ what `DjangoModelCapability` does with the schema description:
 
 ```python
 def get_instructions(self):
-    schema = self.schema_description()          # computed once — fields do not
-                                                # change between runs
+    schema = self.schema_description()  # computed once — fields do not
+
+    # change between runs
     def _instructions(ctx):
         return f"{schema}\n\nCurrent values: {self.current_values(ctx.deps.instance)}"
+
     return _instructions
 ```
 
@@ -267,9 +271,10 @@ Loads memory before a run and saves it after, keyed to the instance.
 
 ```python
 DjangoMemoryCapability(
-    max_history=50,        # messages to keep before trimming oldest
+    max_history=50,  # messages to keep before trimming oldest
     include_history=True,  # replay past turns into the next run
 )
+```
 
 Past turns are replayed as **real pydantic-ai messages**, not as a summary
 written into the instructions. Tool calls and their results survive, so on the
@@ -283,7 +288,6 @@ something bespoke.
 Trimming to `max_history` lands on a request boundary rather than cutting
 blindly, because a tool result whose originating call was dropped is rejected by
 some providers.
-```
 
 Backed by the [`AgentMemory`](memory.md) model, so it needs
 `django_model_agent` in `INSTALLED_APPS` and its migration applied.
@@ -302,6 +306,7 @@ def record_change(record):
         summary=record.summary(),
         tools=record.tool_calls,
     )
+
 
 DjangoAuditCapability(log_to="callback", callback=record_change)
 ```
@@ -340,15 +345,15 @@ from pydantic_ai.capabilities import AbstractCapability
 from django_model_agent import ModelAgentContext
 
 
-class DescriptionCoachCapability(AbstractCapability[ModelAgentContext]):   # (1)
+class DescriptionCoachCapability(AbstractCapability[ModelAgentContext]):  # (1)
     """Nudge the agent about the state of the description."""
 
-    def __init__(self, *, min_words: int = 20):     # (2)
+    def __init__(self, *, min_words: int = 20):  # (2)
         self.min_words = min_words
 
-    def get_instructions(self):                     # (3)
+    def get_instructions(self):  # (3)
         def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
-            place = ctx.deps.instance               # (4)
+            place = ctx.deps.instance  # (4)
             words = len(place.description.split())
             if words == 0:
                 return "This place has no description. Offer to write one."
@@ -356,7 +361,7 @@ class DescriptionCoachCapability(AbstractCapability[ModelAgentContext]):   # (1)
                 return f"The description is only {words} words. Suggest expanding it."
             return f"The description is {words} words, which is sufficient."
 
-        return _instructions                        # (5)
+        return _instructions  # (5)
 ```
 
 1. Parameterise on `ModelAgentContext` — that is the deps type these agents use.
@@ -386,6 +391,7 @@ This is the rule that keeps a capability reusable:
 # Wrong — binds the capability to one row forever
 def __init__(self, *, place):
     self.place = place
+
 
 # Right — read it per run
 def _instructions(ctx: RunContext[ModelAgentContext]) -> str:
@@ -426,7 +432,7 @@ you keep state, so two concurrent runs cannot see each other's:
 ```python
 class TimingCapability(AbstractCapability[ModelAgentContext]):
     async def for_run(self, ctx):
-        return TimingCapability()          # fresh instance per run
+        return TimingCapability()  # fresh instance per run
 
     async def before_run(self, ctx):
         self._started = time.monotonic()
@@ -434,7 +440,7 @@ class TimingCapability(AbstractCapability[ModelAgentContext]):
     async def after_run(self, ctx, *, result):
         elapsed = time.monotonic() - self._started
         logger.info("Run took %.2fs", elapsed)
-        return result                      # always return the result
+        return result  # always return the result
 ```
 
 !!! warning "Database access in hooks"
@@ -445,6 +451,7 @@ class TimingCapability(AbstractCapability[ModelAgentContext]):
 
     ```python
     from asgiref.sync import sync_to_async
+
 
     async def before_run(self, ctx):
         self._row = await sync_to_async(MyModel.objects.get)(pk=ctx.deps.instance.pk)
