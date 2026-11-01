@@ -33,7 +33,7 @@ license = "PolyForm-Noncommercial-1.0.0"
 name = "django-model-agent"
 readme = "README.md"
 requires-python = ">=3.13"
-version = "2026.1.1"
+version = "2026.1.2"
 
 [project.urls]
 Changelog = "https://github.com/jefftriplett/django-model-agent/releases"
