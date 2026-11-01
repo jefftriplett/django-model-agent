@@ -15,6 +15,7 @@ class PlaceAgent(ModelAgent):
     _system_prompts = "You are a helpful assistant."
     tools = [GetPlaceInfoTool, UpdateDescriptionTool]
 
+
 agent = PlaceAgent(place)
 result = await agent.run("What is the address?")
 ```
@@ -64,6 +65,7 @@ The mixin required multiple inheritance and manual saves:
 class PlaceAgent(AgentMemoryMixin, ModelAgent):
     model = Place
 
+
 agent = PlaceAgent(place)
 result = await agent.run("...")
 agent.memory.append_to_history("user", "...")
@@ -79,8 +81,9 @@ class PlaceAgent(ModelAgent):
     def get_extra_capabilities(self):
         return [DjangoMemoryCapability(max_history=50)]
 
+
 agent = PlaceAgent(place)
-result = await agent.run("...")   # memory loaded and saved automatically
+result = await agent.run("...")  # memory loaded and saved automatically
 ```
 
 The `AgentMemory` model, its manager, and the stored data are unchanged, so

@@ -6,17 +6,12 @@ requires = ["hatchling"]
 dev = [
   "pytest>=8.0",
   "pytest-django>=4.5",
-  "zensical>=0.0.52",
+  "zensical>=0.0.52"
 ]
 
 [project]
 authors = [
-  {name = "Jeff Triplett"}
-]
-dependencies = [
-  "django>=4.2",
-  "pydantic>=2.0",
-  "pydantic-ai>=2.22"
+  { name = "Jeff Triplett" }
 ]
 classifiers = [
   "Framework :: Django",
@@ -26,7 +21,12 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
-  "Programming Language :: Python :: Free Threading :: 3 - Stable",
+  "Programming Language :: Python :: Free Threading :: 3 - Stable"
+]
+dependencies = [
+  "django>=4.2",
+  "pydantic>=2.0",
+  "pydantic-ai>=2.22"
 ]
 description = "A Django Ninja-style abstraction for binding Django models to Pydantic AI Agents"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -42,15 +42,15 @@ Homepage = "https://github.com/jefftriplett/django-model-agent"
 Issues = "https://github.com/jefftriplett/django-model-agent/issues"
 Repository = "https://github.com/jefftriplett/django-model-agent"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/django_model_agent"]
-
 [tool.hatch.build.targets.sdist]
 include = [
   "/README.md",
   "/src",
-  "/tests",
+  "/tests"
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/django_model_agent"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"
@@ -58,3 +58,11 @@ addopts = "-v --tb=short"
 python_files = ["test_*.py"]
 pythonpath = [".", "src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+extend-exclude = ["src/django_model_agent/migrations"]
+
+[tool.ruff.lint]
+# Declarative class attributes (`fields = [...]`, `tools = [...]`) are this
+# library's API, so mutable class defaults are intended.
+ignore = ["RUF012"]

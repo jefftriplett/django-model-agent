@@ -15,7 +15,6 @@ from django.core.validators import URLValidator
 from .base import ModelAgent
 from .tools import ModelTool, ReadOnlyTool, ToolResult, UpdateTool
 
-
 # -----------------------------------------------------------------------------
 # Tools for a place-like model
 # -----------------------------------------------------------------------------

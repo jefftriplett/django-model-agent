@@ -10,8 +10,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
 from django_model_agent.base import ModelAgentContext
 from django_model_agent.tools import (
@@ -22,7 +20,7 @@ from django_model_agent.tools import (
     ToolResult,
     UpdateTool,
 )
-
+from tests.models import Place
 
 # -----------------------------------------------------------------------------
 # Fixtures
@@ -455,7 +453,7 @@ class TestModelTool:
                 return ToolResult(success=True, message="Done")
 
         tool = DraftOnlyTool(agent.context)
-        allowed, reason = tool.check_allowed()
+        allowed, _reason = tool.check_allowed()
 
         assert allowed is True
 

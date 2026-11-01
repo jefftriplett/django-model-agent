@@ -72,7 +72,7 @@ class PlaceReviewAgent(ModelAgent):
 
 result = await PlaceReviewAgent(place).run("Review this listing.")
 
-result.output.quality_score   # 4
+result.output.quality_score  # 4
 result.output.missing_fields  # ["phone"]
 ```
 
@@ -83,7 +83,7 @@ and retries if it does not match, so you never parse prose or handle a stray
 Set it per agent or per run when it varies:
 
 ```python
-agent = PlaceReviewAgent(place, output_type=ShortSummary)   # per agent
+agent = PlaceReviewAgent(place, output_type=ShortSummary)  # per agent
 result = await agent.run("Summarise.", output_type=ShortSummary)  # per run
 ```
 
@@ -107,7 +107,8 @@ class Place(models.Model):
     ...
     last_review = models.JSONField(null=True, blank=True)
 
-place.last_review = review.model_dump(mode="json")   # (1)
+
+place.last_review = review.model_dump(mode="json")  # (1)
 place.save(update_fields=["last_review"])
 ```
 
@@ -159,12 +160,15 @@ Let the model pick a shape by using a union, then branch on what came back:
 class NeedsWork(BaseModel):
     problems: list[str]
 
+
 class ReadyToPublish(BaseModel):
     confidence: float
+
 
 class PlaceAgent(ModelAgent):
     model = Place
     output_type = NeedsWork | ReadyToPublish
+
 
 match (await PlaceAgent(place).run("Assess this listing.")).output:
     case ReadyToPublish(confidence=c) if c > 0.8:
@@ -246,8 +250,11 @@ def agent_for(place, *, house_style):
         place,
         instructions=render_to_string(
             "agents/place_instructions.txt",
-            {"instance": place, "house_style": house_style,
-             "examples": PlaceExample.objects.filter(approved=True)[:3]},
+            {
+                "instance": place,
+                "house_style": house_style,
+                "examples": PlaceExample.objects.filter(approved=True)[:3],
+            },
         ),
     )
 ```
@@ -267,7 +274,7 @@ class PlaceAgent(ModelAgent):
     _field_sets = {
         "public": ["name", "address", "phone"],
         "staff": ["name", "address", "phone", "notes", "internal_id"],
-        "admin": None,          # None means every field
+        "admin": None,  # None means every field
     }
 
     _system_prompts = "You manage place records."
@@ -315,7 +322,7 @@ async def summarise(request, pk):
 
     response = StreamingHttpResponse(events(), content_type="text/event-stream")
     response["Cache-Control"] = "no-cache"
-    response["X-Accel-Buffering"] = "no"      # (1)
+    response["X-Accel-Buffering"] = "no"  # (1)
     return response
 ```
 
@@ -378,9 +385,10 @@ or per agent, or per run:
 ```python
 class PlaceAgent(ModelAgent):
     model = Place
-    usage_limits = UsageLimits(tool_calls_limit=5)      # per agent
+    usage_limits = UsageLimits(tool_calls_limit=5)  # per agent
 
-await agent.run("...", usage_limits=UsageLimits(request_limit=3))   # per run
+
+await agent.run("...", usage_limits=UsageLimits(request_limit=3))  # per run
 ```
 
 First match wins: run argument, then `__init__`, then the class attribute, then
@@ -469,7 +477,7 @@ class AgentAudit(models.Model):
 
 def persist(record):
     if not record.changed:
-        return                      # nothing happened; skip the row
+        return  # nothing happened; skip the row
     AgentAudit.objects.create(
         object_pk=str(record.instance_pk),
         model_name=record.model_class,
@@ -529,18 +537,18 @@ class PlaceAgent(ModelAgent):
 state. To describe the transitions as well, add it yourself:
 
 ```python
-    def get_extra_capabilities(self):
-        return [
-            DjangoFSMCapability(
-                tools=self.tools,
-                transitions={
-                    "draft": ["public"],
-                    "public": ["featured", "closed"],
-                    "featured": ["public"],
-                    "closed": [],
-                },
-            )
-        ]
+def get_extra_capabilities(self):
+    return [
+        DjangoFSMCapability(
+            tools=self.tools,
+            transitions={
+                "draft": ["public"],
+                "public": ["featured", "closed"],
+                "featured": ["public"],
+                "closed": [],
+            },
+        )
+    ]
 ```
 
 Filtering is an optimisation, not a security boundary. `ModelTool.check_allowed()`
@@ -590,7 +598,7 @@ When a human approves, replay it:
 pending = PendingAction.objects.get(pk=pk)
 
 results = DeferredToolResults()
-results.approvals[pending.tool_call_id] = True      # or False to reject
+results.approvals[pending.tool_call_id] = True  # or False to reject
 
 result = await agent.run(
     message_history=ModelMessagesTypeAdapter.validate_python(pending.messages),
@@ -654,8 +662,10 @@ class ProposeUrlTool(ModelTool):
 
     def execute(self, *, url: str, reason: str = "", **kwargs) -> ToolResult:
         ProposedEdit.objects.create(
-            place=self.instance, field_name="website",
-            new_value=url, reason=reason,
+            place=self.instance,
+            field_name="website",
+            new_value=url,
+            reason=reason,
         )
         return ToolResult(success=True, message="Proposed; awaiting review.")
 ```
@@ -681,7 +691,7 @@ from pydantic_ai.models.test import TestModel
 def test_agent_runs(place):
     agent = PlaceAgent(place)
     pai = agent.build_agent()
-    agent._pydantic_agent = pai        # so run_sync uses this one
+    agent._pydantic_agent = pai  # so run_sync uses this one
 
     with pai.override(model=TestModel()):
         result = agent.run_sync("What is the address?")
@@ -704,6 +714,7 @@ def tools_offered(result):
         if type(part).__name__ == "ToolCallPart"
     }
 
+
 assert "publish" in tools_offered(result)
 assert "close" not in tools_offered(result)
 ```
@@ -720,6 +731,7 @@ def instructions_sent(result):
         for m in result.all_messages()
         if getattr(m, "instructions", None)
     )
+
 
 assert place.name in instructions_sent(result)
 ```

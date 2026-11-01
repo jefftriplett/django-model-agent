@@ -11,9 +11,8 @@ import pytest
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import UsageLimitExceeded, UsageLimits
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
+from tests.models import Place
 
 
 class StreamAgent(ModelAgent):
@@ -87,8 +86,10 @@ class TestStreamingHonoursUsageLimits:
     @pytest.mark.anyio
     async def test_limits_applied_to_stream(self, place):
         agent = prepared(place, usage_limits=UsageLimits(request_limit=0))
-        with agent._pydantic_agent.override(model=TestModel()):
-            with pytest.raises(UsageLimitExceeded):
-                async with agent.run_stream("go") as stream:
-                    async for _ in stream.stream_text(delta=True):
-                        pass
+        with (
+            agent._pydantic_agent.override(model=TestModel()),
+            pytest.raises(UsageLimitExceeded),
+        ):
+            async with agent.run_stream("go") as stream:
+                async for _ in stream.stream_text(delta=True):
+                    pass

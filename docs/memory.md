@@ -96,10 +96,10 @@ memory.get("last_question")  # "hours"
 ### Convenience methods
 
 ```python
-memory.get("key", default=None)    # Get a value from memory data
-memory.set("key", "value")         # Set a value (doesn't save)
+memory.get("key", default=None)  # Get a value from memory data
+memory.set("key", "value")  # Set a value (doesn't save)
 memory.update(key1="a", key2="b")  # Update multiple values (doesn't save)
-memory.clear()                      # Clear all memory data (doesn't save)
+memory.clear()  # Clear all memory data (doesn't save)
 ```
 
 All mutating methods require an explicit `memory.save()` call.
@@ -129,6 +129,7 @@ Add persistent memory to any `ModelAgent` subclass:
 ```python
 from django_model_agent import ModelAgent
 from django_model_agent.memory import AgentMemoryMixin
+
 
 class RestaurantAgent(AgentMemoryMixin, ModelAgent):
     model = Restaurant

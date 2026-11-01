@@ -10,8 +10,6 @@ from decimal import Decimal
 
 import pytest
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
 from django_model_agent.base import ModelAgentContext
 from django_model_agent.memory import AgentMemory
@@ -20,7 +18,7 @@ from django_model_agent.tools import (
     ToolResult,
     UpdateTool,
 )
-
+from tests.models import Place
 
 # -----------------------------------------------------------------------------
 # ModelAgent Base Tests

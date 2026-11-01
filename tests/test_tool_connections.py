@@ -16,10 +16,9 @@ import pytest
 from django.db import connections
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent, capabilities
 from django_model_agent.tools import ModelTool, ToolResult
+from tests.models import Place
 
 
 class FakeConnection:
@@ -77,10 +76,9 @@ class TestClosingNewConnections:
         conn = FakeConnection("default")
         fake_connections.append(conn)
 
-        with pytest.raises(RuntimeError):
-            with capabilities._closing_new_connections():
-                conn.connect()
-                raise RuntimeError("tool failed")
+        with pytest.raises(RuntimeError), capabilities._closing_new_connections():
+            conn.connect()
+            raise RuntimeError("tool failed")
 
         assert conn.closed
 

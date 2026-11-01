@@ -39,6 +39,7 @@ Suppose you have a Django model:
 ```python
 from django.db import models
 
+
 class Restaurant(models.Model):
     name = models.CharField(max_length=255)
     address = models.CharField(max_length=255, blank=True)
@@ -52,6 +53,7 @@ Create an agent that can reason about it:
 
 ```python
 from django_model_agent import ModelAgent
+
 
 class RestaurantAgent(ModelAgent):
     model = Restaurant
@@ -142,6 +144,7 @@ AGENT_MODEL = env("AGENT_MODEL", default="openai:gpt-4o")
 
 # agents.py
 from django.conf import settings
+
 
 class RestaurantAgent(ModelAgent):
     model = Restaurant
@@ -271,8 +274,8 @@ class RestaurantAgent(ModelAgent):
 
 
 result = await RestaurantAgent(restaurant).run("When are we open today?")
-result.output.opens_at        # "09:00"
-result.output.is_open_today   # True
+result.output.opens_at  # "09:00"
+result.output.is_open_today  # True
 ```
 
 pydantic-ai validates the response against the schema and retries if it does not

@@ -13,8 +13,6 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgentContext
 from django_model_agent.capabilities import (
     DjangoMemoryCapability,
@@ -22,6 +20,7 @@ from django_model_agent.capabilities import (
 )
 from django_model_agent.memory import AgentMemory, AgentMemoryMixin
 from django_model_agent.tools import ReadOnlyTool
+from tests.models import Place
 
 # transaction=True is required, not incidental: the capability reaches the ORM
 # through sync_to_async, which runs on a different thread than the test. The
@@ -66,7 +65,9 @@ def message_text(result) -> str:
 
 def instructions_sent(result) -> str:
     return "\n".join(
-        m.instructions for m in result.all_messages() if getattr(m, "instructions", None)
+        m.instructions
+        for m in result.all_messages()
+        if getattr(m, "instructions", None)
     )
 
 

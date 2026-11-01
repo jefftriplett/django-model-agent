@@ -245,9 +245,9 @@ class UpdateTool(ModelTool):
     ) -> dict[str, Any]:
         """Compute differences between two states."""
         changes = {}
-        for key in before:
-            if before[key] != after.get(key):
-                changes[key] = {"before": before[key], "after": after[key]}
+        for key, old in before.items():
+            if old != after.get(key):
+                changes[key] = {"before": old, "after": after[key]}
         return changes
 
     @abstractmethod

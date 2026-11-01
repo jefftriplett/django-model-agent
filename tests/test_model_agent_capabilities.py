@@ -15,8 +15,6 @@ from pydantic import BaseModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import UsageLimitExceeded, UsageLimits
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent
 from django_model_agent.capabilities import (
     DjangoAuditCapability,
@@ -25,6 +23,7 @@ from django_model_agent.capabilities import (
     DjangoModelCapability,
 )
 from django_model_agent.tools import ReadOnlyTool
+from tests.models import Place
 
 
 class Review(BaseModel):
@@ -66,7 +65,9 @@ def run_with_test_model(agent: ModelAgent, prompt: str = "hi"):
 
 def instructions_sent(result) -> str:
     return "\n".join(
-        m.instructions for m in result.all_messages() if getattr(m, "instructions", None)
+        m.instructions
+        for m in result.all_messages()
+        if getattr(m, "instructions", None)
     )
 
 

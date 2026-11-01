@@ -13,11 +13,10 @@ import pytest
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.models.test import TestModel
 
-from tests.models import Place
-
 from django_model_agent import ModelAgent, ModelAgentContext
 from django_model_agent.capabilities import DjangoModelCapability, tools_need_approval
-from django_model_agent.tools import ToolResult, UpdateTool
+from django_model_agent.tools import UpdateTool
+from tests.models import Place
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -67,7 +66,9 @@ class TestApprovalFlow:
 
     def test_gated_tool_suspends_the_run(self, place):
         agent = self.build([GatedTool])
-        result = agent.run_sync("go", deps=ModelAgentContext(instance=place, agent=None))
+        result = agent.run_sync(
+            "go", deps=ModelAgentContext(instance=place, agent=None)
+        )
         assert isinstance(result.output, DeferredToolRequests)
         assert [c.tool_name for c in result.output.approvals] == ["gated_rename"]
 
