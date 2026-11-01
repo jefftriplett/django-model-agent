@@ -357,7 +357,8 @@ tears the run down instead of leaving it hanging.
     database from inside a streamed run has the same constraint described under
     [database access in tests](#database-access-in-tests) — the ORM call happens
     on a worker thread, so it must not be inside an open transaction owned by
-    another thread.
+    another thread. Any connection the tool opens there is closed when it
+    returns.
 
 Usage limits apply to streamed runs exactly as they do to `run()`, so a stream
 cannot quietly outspend a capped non-streaming call.
@@ -456,6 +457,80 @@ result = await PlaceAgent(place).run("Summarise.")
 result.usage.input_tokens
 result.usage.requests
 ```
+
+## Fall back to another model when a provider fails
+
+Pass a `FallbackModel` as `ai_model`. When the first model raises an API error,
+the request moves on to the next:
+
+```python
+from pydantic_ai.models.fallback import FallbackModel
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    fields = ["name", "description"]
+
+
+agent = PlaceAgent(
+    place,
+    ai_model=FallbackModel("openai:gpt-4o", "anthropic:claude-sonnet-4-20250514"),
+)
+```
+
+On pydantic-ai 2.64 and later the `ModelFallback` capability does the same from
+`get_extra_capabilities()`, and can stick with the fallback for the rest of the
+run (`sticky=True`).
+
+## Bound the threads sync tools run in
+
+pydantic-ai runs sync tools in short-lived worker threads. Under sustained load
+in a long-running server, cap them with a fixed pool:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+from pydantic_ai.capabilities import UseThreadExecutor
+
+TOOL_THREADS = ThreadPoolExecutor(max_workers=8, thread_name_prefix="agent-tool")
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    tools = [UpdateDescriptionTool]
+
+    def get_extra_capabilities(self):
+        return [UseThreadExecutor(TOOL_THREADS)]
+```
+
+Create the pool once at module level, not per agent, so threads are shared. Each
+sync tool call closes the database connections it opened, so a pooled thread
+doesn't hold a connection between calls.
+
+## Call external services from an async tool
+
+When a tool spends most of its time waiting on a network call, make it async so
+it doesn't occupy a thread:
+
+```python
+import httpx
+
+
+class FetchRatingTool(ModelTool):
+    name = "fetch_rating"
+    description = "Fetch the latest public rating for this place"
+
+    async def execute(self, **kwargs) -> ToolResult:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://ratings.example/{self.instance.slug}")
+        self.instance.rating = response.json()["rating"]
+        await self.instance.asave(update_fields=["rating"])
+        return ToolResult(success=True, message=f"Rating is {self.instance.rating}")
+```
+
+Async tools run on the event loop, so ORM calls inside them must use the async
+methods (`asave()`, `aget()`, `acount()`) or `sync_to_async`. A sync ORM call
+raises `SynchronousOnlyOperation`. See [async tools](tools.md#async-tools).
 
 ## Record an audit trail in your own model
 
@@ -572,6 +647,7 @@ The run returns a `DeferredToolRequests` instead of the usual output:
 
 ```python
 from pydantic_ai import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 
 agent = PlaceAgent(place)
 result = await agent.run("Publish this listing.")
@@ -618,6 +694,44 @@ The tool now runs for real, and the agent carries on from where it stopped.
 
     It also means `result.output` is no longer guaranteed to be your
     `output_type` once a tool is gated. Check with `isinstance` before using it.
+
+### Approve automatically for some users
+
+Suspending makes sense for some callers but not others. pydantic-ai's
+`HandleDeferredToolCalls` capability resolves gated calls inside the run, and
+handing back `None` lets the run suspend as usual:
+
+```python
+from pydantic_ai.capabilities import HandleDeferredToolCalls
+
+
+def approve_for(user):
+    def handler(ctx, requests):
+        if not user.is_staff:
+            return None  # suspend and return DeferredToolRequests as above
+        return requests.build_results(approve_all=True)
+
+    return handler
+
+
+class PlaceAgent(ModelAgent):
+    model = Place
+    tools = [PublishTool]
+
+    def __init__(self, instance, *, user, **kwargs):
+        self.user = user
+        super().__init__(instance, **kwargs)
+
+    def get_extra_capabilities(self):
+        return [HandleDeferredToolCalls(handler=approve_for(self.user))]
+
+
+await PlaceAgent(place, user=request.user).run("Publish this listing.")
+```
+
+For staff the tool runs straight away; for everyone else the run returns
+`DeferredToolRequests` and the flow above takes over. The handler can also be
+`async`, and can approve some calls and leave others pending.
 
 ## Propose changes for human review
 
@@ -682,25 +796,19 @@ for edit in ProposedEdit.objects.filter(place=place, approved=None):
 
 ## Test agents without calling an API
 
-Use pydantic-ai's `TestModel`. Build the agent, attach it, then override:
+Pass pydantic-ai's `TestModel` as the model:
 
 ```python
 from pydantic_ai.models.test import TestModel
 
 
 def test_agent_runs(place):
-    agent = PlaceAgent(place)
-    pai = agent.build_agent()
-    agent._pydantic_agent = pai  # so run_sync uses this one
-
-    with pai.override(model=TestModel()):
-        result = agent.run_sync("What is the address?")
-
+    result = PlaceAgent(place, ai_model=TestModel()).run_sync("What is the address?")
     assert result.output is not None
 ```
 
-Assigning `_pydantic_agent` matters: `run_sync()` lazily builds its own agent on
-first use, which would not carry the override.
+`FunctionModel` works the same way when a test needs to script the model's
+replies.
 
 `TestModel` calls every tool it is offered, which makes it a good way to assert
 what the model could see:
@@ -786,8 +894,8 @@ class PlaceAgent(ModelAgent):
         return [DjangoMemoryCapability(max_history=50)]
 ```
 
-Past turns are replayed as instructions and the new turn is saved when the run
-finishes. Requires `django_model_agent` in `INSTALLED_APPS` and its migration
+Past turns are replayed as real pydantic-ai messages, so tool calls and their
+results survive, and the new turn is saved when the run finishes. Requires `django_model_agent` in `INSTALLED_APPS` and its migration
 applied.
 
 To record turns without feeding them back — useful for a transcript you only
