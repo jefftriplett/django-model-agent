@@ -81,7 +81,7 @@ class UpdateHoursTool(ModelTool):
     name = "update_hours"
     description = "Update restaurant hours"
 
-    async def execute(self, *, hours: str) -> ToolResult:
+    def execute(self, *, hours: str) -> ToolResult:
         self.instance.hours = hours
         self.instance.save()
         return ToolResult(success=True, message="Hours updated")
@@ -220,7 +220,7 @@ class PublishTool(ModelTool):
     name = "publish"
     allowed_states = ["draft"]  # Only works when state is "draft"
 
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         self.instance.publish()
         self.instance.save()
         return ToolResult(success=True, message="Published")

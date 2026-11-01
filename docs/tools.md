@@ -271,6 +271,33 @@ class GetContactInfoTool(ReadOnlyTool):
 Override `read()` instead of `execute()`. The base class wraps the return
 value in a successful `ToolResult` automatically.
 
+The model receives the status line followed by the dict as JSON. More
+generally, any `ToolResult` with `data` set sends that data along with its
+message.
+
+## Async tools
+
+Tools are usually plain `def` methods. pydantic-ai runs sync tools in a worker
+thread, so they can use Django's ORM as normal.
+
+A tool can also be a coroutine: `async def execute` on a `ModelTool`, or an
+`async def` method decorated with `@ModelAgent.tool`. It is awaited on the
+event loop, so it must use Django's async ORM methods (`asave()`, `aget()`,
+and so on) or `sync_to_async`. A sync ORM call there raises
+`SynchronousOnlyOperation`.
+
+```python
+class FetchRatingTool(ModelTool):
+    name = "fetch_rating"
+    description = "Fetch the latest rating and store it"
+
+    async def execute(self, **kwargs) -> ToolResult:
+        rating = await ratings_client.get(self.instance.slug)
+        self.instance.rating = rating
+        await self.instance.asave(update_fields=["rating"])
+        return ToolResult(success=True, message=f"Rating is {rating}")
+```
+
 ## UpdateTool
 
 For tools that modify the instance. Captures state before and after the

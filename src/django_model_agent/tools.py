@@ -9,14 +9,15 @@ Example:
         name = "update_hours"
         description = "Update the restaurant's operating hours"
 
-        async def execute(self, hours: str) -> str:
+        def execute(self, hours: str) -> ToolResult:
             self.instance.hours = hours
             self.instance.save()
-            return f"Hours updated to: {hours}"
+            return ToolResult(success=True, message=f"Hours updated to: {hours}")
 """
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -127,9 +128,13 @@ class ModelTool(ABC):
         """
         Async wrapper for execute. Override for true async implementations.
 
-        By default, just calls the sync execute method.
+        By default, calls execute and awaits it when execute is itself a
+        coroutine function.
         """
-        return self.execute(**kwargs)
+        result = self.execute(**kwargs)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
 
     def __call__(self, **kwargs: Any) -> ToolResult:
         """
