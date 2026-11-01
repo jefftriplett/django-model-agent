@@ -234,3 +234,11 @@ class TestDecoratedToolFuncs:
 
         with pytest.raises(ValueError, match="needs ModelAgentContext.agent to be set"):
             agent.run_sync("hi", deps=ModelAgentContext(instance=place, agent=None))
+
+
+def test_model_agent_schema_uses_capability_type_map(place):
+    """ModelAgent.schema and the capability's instructions agree on every type."""
+    agent_cls = type("TypeAgent", (ModelAgent,), {"model": Place})
+    agent = agent_cls(place)
+    for field in Place._meta.fields:
+        assert agent._get_field_type(field) == field_python_type(field), field.name

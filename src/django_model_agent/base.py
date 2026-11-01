@@ -46,9 +46,8 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Sequence
-from decimal import Decimal
 from functools import wraps
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from django.db import models
 from django.template import TemplateDoesNotExist, TemplateSyntaxError, engines
@@ -292,79 +291,29 @@ class ModelAgent:
             **model_fields,
         )
 
-    def _get_field_type(self, field: models.Field) -> type:
+    def _get_field_type(self, field: models.Field) -> Any:
         """
         Map a Django field to its Python type, respecting nullability.
 
-        Args:
-            field: A Django model field
-
-        Returns:
-            The appropriate Python type (potentially Optional)
+        Uses the same map as ``DjangoModelCapability``, so the schema and the
+        instructions the model sees always agree.
         """
-        try:
-            base_type = field.get_internal_type()
-            type_mapping = {
-                "AutoField": int,
-                "BigAutoField": int,
-                "SmallAutoField": int,
-                "IntegerField": int,
-                "SmallIntegerField": int,
-                "BigIntegerField": int,
-                "PositiveIntegerField": int,
-                "PositiveSmallIntegerField": int,
-                "PositiveBigIntegerField": int,
-                "FloatField": float,
-                "DecimalField": Decimal,
-                "CharField": str,
-                "TextField": str,
-                "EmailField": str,
-                "URLField": str,
-                "SlugField": str,
-                "UUIDField": str,
-                "FilePathField": str,
-                "FileField": str,
-                "ImageField": str,
-                "GenericIPAddressField": str,
-                "IPAddressField": str,
-                "BooleanField": bool,
-                "NullBooleanField": Optional[bool],
-                "DateField": str,  # ISO format strings for AI
-                "DateTimeField": str,
-                "TimeField": str,
-                "DurationField": str,
-                "BinaryField": bytes,
-                "JSONField": dict,
-                "ForeignKey": int,  # Return the ID
-            }
-            python_type = type_mapping.get(base_type, str)
-        except AttributeError:
-            python_type = str
+        from .capabilities import field_python_type
 
-        # Handle nullability
-        if getattr(field, "null", False) and python_type is not type(None):
-            return Optional[python_type]
-
-        return python_type
+        return field_python_type(field)
 
     def _get_field_default(self, field: models.Field) -> Any:
         """
         Get the current value from the instance as the default.
 
-        Args:
-            field: A Django model field
-
-        Returns:
-            The current value on the instance, or ... if required
+        Returns ``...`` (required) when the value can't be read, such as an
+        unset foreign key, which ``field_value`` would report as None.
         """
         try:
             value = getattr(self.instance, field.name)
-            # Handle related fields - get the ID
-            if hasattr(value, "pk"):
-                return value.pk
-            return value
         except AttributeError:
             return ...
+        return value.pk if hasattr(value, "pk") else value
 
     def get_system_prompts(self) -> str:
         """
@@ -489,19 +438,12 @@ class ModelAgent:
         return "\n".join(lines)
 
     def get_current_values(self) -> dict[str, Any]:
-        """
-        Get the current values of all schema fields from the instance.
+        """The instance's current values for every schema field."""
+        from .capabilities import field_value
 
-        Returns:
-            Dict mapping field names to their current values
-        """
-        values = {}
-        for field_name in self.schema.model_fields:
-            value = getattr(self.instance, field_name, None)
-            if hasattr(value, "pk"):
-                value = value.pk
-            values[field_name] = value
-        return values
+        return {
+            name: field_value(self.instance, name) for name in self.schema.model_fields
+        }
 
     def _get_ai_model(self) -> Any:
         """
