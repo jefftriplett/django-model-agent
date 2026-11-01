@@ -278,7 +278,9 @@ message.
 ## Async tools
 
 Tools are usually plain `def` methods. pydantic-ai runs sync tools in a worker
-thread, so they can use Django's ORM as normal.
+thread, so they can use Django's ORM as normal. Any database connection a sync
+tool opens is closed when the call returns, so reused worker threads don't hold
+connections between calls.
 
 A tool can also be a coroutine: `async def execute` on a `ModelTool`, or an
 `async def` method decorated with `@ModelAgent.tool`. It is awaited on the
