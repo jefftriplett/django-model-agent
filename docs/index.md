@@ -63,8 +63,9 @@ all of that, similar to how Django Ninja's `ModelSchema` handles serialization.
 
 -   __Pydantic AI integration__
 
-    `build_agent()` produces a real `pydantic_ai.Agent` with deps, tools,
-    and prompts wired up.
+    Built from pydantic-ai capabilities, so `run()`, streaming, structured
+    output, and approvals work out of the box, and each capability also works
+    with a plain `pydantic_ai.Agent`.
 
     [:octicons-arrow-right-24: API reference](reference.md)
 

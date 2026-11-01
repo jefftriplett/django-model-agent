@@ -237,19 +237,19 @@ agent = RestaurantAgent(restaurant, ai_model="anthropic:claude-sonnet-4-20250514
 
 ### Testing with pydantic-ai's TestModel
 
-Use `build_agent()` and `override()` to test without making real API calls:
+Pass `TestModel` as the model to test without making real API calls:
 
 ```python
 from pydantic_ai.models.test import TestModel
 
-agent = RestaurantAgent(restaurant)
-pai = agent.build_agent()
-agent._pydantic_agent = pai
-
-with pai.override(model=TestModel()):
-    result = agent.run_sync("What are the hours?")
-    assert result.output is not None
+agent = RestaurantAgent(restaurant, ai_model=TestModel())
+result = agent.run_sync("What are the hours?")
+assert result.output is not None
 ```
+
+`TestModel` calls every tool the agent offers, so tools run for real against the
+instance. See [testing agents](cookbook.md#test-agents-without-calling-an-api)
+for more.
 
 ## Getting structured output
 
@@ -374,7 +374,9 @@ templates:
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "hours"]
-    _instructions_template = "agents/restaurant_instructions.html"
+    _instructions_template = "agents/restaurant_instructions.txt"
 ```
 
-The template receives `instance` and `schema` in its context.
+The template receives `instance` and `schema` in its context. Use a `.txt`
+template so Django's autoescaping doesn't turn characters like apostrophes into
+HTML entities the model reads literally.

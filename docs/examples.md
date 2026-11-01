@@ -299,12 +299,8 @@ from pydantic_ai.models.test import TestModel
 
 
 def test_weather_agent_calls_tools_in_order(place):
-    agent = VenueWeatherAgent(place)
-    pai = agent.build_agent()
-    agent._pydantic_agent = pai
-
-    with pai.override(model=TestModel()):
-        result = agent.run_sync("Is it going to rain today?")
+    agent = VenueWeatherAgent(place, ai_model=TestModel())
+    result = agent.run_sync("Is it going to rain today?")
 
     called = [
         part.tool_name

@@ -177,7 +177,7 @@ from django_model_agent.tools import ToolResult
 |-------|------|---------|-------------|
 | `success` | `bool` | — | Whether the tool executed successfully |
 | `message` | `str` | — | Human-readable result message |
-| `data` | `dict \| None` | `None` | Optional structured data |
+| `data` | `dict \| None` | `None` | Structured data, sent to the model as JSON after the message |
 | `changes` | `dict` | `{}` | Field changes made (for audit/diff) |
 
 ## ModelTool
@@ -192,10 +192,14 @@ Abstract base class for tools that operate on Django model instances.
 |----------------|------|---------|-------------|
 | `name` | `str` | — | Unique tool identifier |
 | `description` | `str` | — | Human-readable description for the AI |
-| `requires_confirmation` | `bool` | `False` | Advisory only; not enforced by the library |
+| `requires_confirmation` | `bool` | `False` | Suspend the run for human approval before the tool executes |
 | `allowed_states` | `list[str] \| None` | `None` | FSM states where allowed |
 
 **Abstract method:** `execute(**kwargs) -> ToolResult`
+
+`execute` may be `async def`. Sync tools run in a worker thread; async tools run
+on the event loop and must use Django's async ORM. The model receives
+`str(result)`, plus `result.data` as JSON when it's set.
 
 ## ReadOnlyTool
 

@@ -10,20 +10,6 @@ This library provides a declarative way to create AI agents that understand and 
 
 ## Installation
 
-This package is not yet published on PyPI. Install directly from GitHub:
-
-```bash
-uv add git+https://github.com/jefftriplett/django-model-agent
-```
-
-Or with pip:
-
-```bash
-pip install git+https://github.com/jefftriplett/django-model-agent
-```
-
-Once published on PyPI:
-
 ```bash
 uv add django-model-agent
 ```
@@ -34,19 +20,21 @@ Or with pip:
 pip install django-model-agent
 ```
 
+Requires Python 3.13+, Django 5.2+, and pydantic-ai 2.22+.
+
 ## Quick Start
 
-Today, the stable part of the package is the Django model/schema/tool abstraction layer. To execute prompts, subclass `ModelAgent` and implement `build_agent()` for your own `pydantic-ai` integration.
-
-### Class Attribute Style
+Declare which fields the agent can see, give it instructions, and run it against
+an instance:
 
 ```python
-from django_model_agent import ModelAgent, ModelTool
+from django_model_agent import ModelAgent
 
 
 class RestaurantAgent(ModelAgent):
     model = Restaurant
     fields = ["name", "address", "hours", "neighborhood"]
+    ai_model = "openai:gpt-4o"
 
     _system_prompts = """
     You are an assistant that helps reason about restaurant information.
@@ -54,7 +42,16 @@ class RestaurantAgent(ModelAgent):
     """
 
     tools = [UpdateHoursTool, FlagForReviewTool]
+
+
+restaurant = await Restaurant.objects.aget(pk=123)
+result = await RestaurantAgent(restaurant).run("Are we open on Christmas Day?")
+print(result.output)
 ```
+
+The field schema and the instance's current values reach the model as
+instructions, re-read on every request, so they're never stale. `run_sync()`,
+`run_stream()`, and `run_stream_events()` are there too.
 
 ### Decorator Style (Pydantic-AI inspired)
 
@@ -77,60 +74,49 @@ class RestaurantAgent(ModelAgent):
         return str(self.instance.hours)
 ```
 
-### Usage
+### Overrides
 
-Inspect the schema, prompts, and tools:
+Most class attributes can be overridden per agent:
 
 ```python
-restaurant = Restaurant.objects.get(pk=123)
-agent = RestaurantAgent(restaurant)
-
-schema = agent.schema
-system_prompt = agent.get_system_prompts()
-instructions = agent.get_instructions()
-tools = agent.get_tools()
-
-# Override prompts at init time
 agent = RestaurantAgent(
     restaurant,
-    system_prompt="You are a concise assistant.",
     instructions="Focus only on hours of operation.",
+    ai_model="anthropic:claude-sonnet-4-20250514",
+    output_type=HoursAnswer,
 )
 ```
 
-Wire in your own runtime:
-
-```python
-from pydantic_ai import Agent
-
-
-class RunnableRestaurantAgent(RestaurantAgent):
-    def build_agent(self) -> Agent:
-        return Agent(
-            model=self.schema,
-            system_prompt=self.get_system_prompts(),
-            instructions=self.get_instructions(),
-            tools=self.get_tools(),
-        )
-```
+When no model is set anywhere, the `PYDANTIC_AI_MODEL` environment variable is
+used.
 
 ## Features
 
-- **Declarative model binding**: Define which Django model fields your agent can access
-- **Field sets**: Create named groups of fields for role-based exposure
-- **Multiple prompt sources**: Combine class-level prompts with decorated methods
-- **Tool registration**: Register tools via class attributes or decorators
-- **Template support**: Use Django templates for dynamic instructions
-- **Automatic schema generation**: Pydantic schemas are generated from Django models
+- **Declarative model binding**: choose which Django model fields the agent can see
+- **Field sets**: named groups of fields for role-based exposure
+- **Tools**: `ModelTool`, `ReadOnlyTool`, and `UpdateTool` classes, or decorated
+  methods; sync or async
+- **Structured output**: set `output_type` to get a validated Pydantic model back
+- **Human approval**: `requires_confirmation = True` suspends the run before a tool executes
+- **Workflow state**: `allowed_states` hides tools that can't run in the
+  instance's current state
+- **Memory**: `DjangoMemoryCapability` keeps conversations per instance in the database
+- **Audit trail**: `DjangoAuditCapability` reports field changes, tool calls, and token usage
+- **Usage limits**: cap requests, tool calls, and tokens per run, agent, or project
+- **Composable**: everything is a pydantic-ai capability, usable with a plain
+  `pydantic_ai.Agent` too
 
 ## Init Parameters
 
 | Parameter | Description |
 |-----------|-------------|
 | `instance` | The Django model instance to operate on |
-| `system_prompt` | Override or extend the class-level system prompts |
-| `instructions` | Override or extend the class-level instructions |
+| `system_prompt` | Override the class-level system prompts |
+| `instructions` | Override the class-level instructions |
 | `field_set` | Name of a field set to use for schema generation |
+| `ai_model` | The pydantic-ai model to use, e.g. `"openai:gpt-4o"` |
+| `output_type` | Structured output type for this agent |
+| `usage_limits` | `UsageLimits` applied to every run |
 
 ## Class Attributes
 
@@ -139,11 +125,17 @@ class RunnableRestaurantAgent(RestaurantAgent):
 | `model` | The Django model class this agent operates on |
 | `fields` | List of field names to expose to the agent (None = all fields) |
 | `exclude` | List of field names to exclude from the schema |
+| `ai_model` | Default pydantic-ai model |
+| `output_type` | Default structured output type (None = plain text) |
+| `usage_limits` | Default `UsageLimits` |
 | `_system_prompts` | System prompt string or list of strings for the agent |
 | `_instructions` | Instructions string or list of strings for the agent |
 | `_instructions_template` | Path to a Django template for instructions |
 | `tools` | List of tool classes available to the agent |
 | `_field_sets` | Named groups of fields for role-based exposure |
+
+Override `get_extra_capabilities()` to add capabilities such as memory, auditing,
+or any pydantic-ai capability.
 
 ## Decorators
 
