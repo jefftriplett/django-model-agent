@@ -24,6 +24,8 @@ annotations``. Tool functions are introspected with ``get_type_hints()``, which
 cannot resolve ``RunContext`` when annotations are strings.
 """
 
+import inspect
+import json
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -178,8 +180,6 @@ def _tool_signature(tool_cls: type) -> list[Any]:
     Without this the model is handed a parameterless schema and can never pass
     an argument, however carefully the method declares one.
     """
-    import inspect
-
     for name in ("read", "update", "execute"):
         method = getattr(tool_cls, name, None)
         if method is None:
@@ -208,8 +208,6 @@ def _tool_signature(tool_cls: type) -> list[Any]:
 
 def _with_ctx_signature(params: list[Any]) -> Any:
     """Build a signature with a properly annotated RunContext first parameter."""
-    import inspect
-
     ctx_param = inspect.Parameter(
         "ctx",
         inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -224,6 +222,30 @@ def _with_ctx_signature(params: list[Any]) -> Any:
     return inspect.Signature([ctx_param, *normalised])
 
 
+def _tool_output(result: Any) -> str:
+    """
+    The text the model receives from a tool.
+
+    ``str(ToolResult)`` is only a status line, so a ``ReadOnlyTool``'s data
+    would never reach the model. Append the data when there is any.
+    """
+    from .tools import ToolResult
+
+    text = str(result)
+    if isinstance(result, ToolResult) and result.data:
+        text += "\n" + json.dumps(result.data, default=str)
+    return text
+
+
+def _is_async_tool(tool_cls: type) -> bool:
+    """Whether a ``ModelTool`` subclass implements its work as a coroutine."""
+    from .tools import ModelTool
+
+    return inspect.iscoroutinefunction(tool_cls.execute) or (
+        tool_cls.execute_async is not ModelTool.execute_async
+    )
+
+
 def _tool_from_class(tool_cls: type) -> Tool:
     """
     Wrap a ``ModelTool`` subclass as a context-taking pydantic-ai tool.
@@ -231,24 +253,35 @@ def _tool_from_class(tool_cls: type) -> Tool:
     ``allowed_states`` and ``requires_confirmation`` are translated onto
     pydantic-ai's own ``prepare`` and ``requires_approval`` rather than
     reimplemented, so they behave the way the rest of the ecosystem expects.
-    """
 
-    def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
-        # Constructed per call so the tool sees this run's instance.
-        return str(tool_cls(ctx.deps)(**kwargs))
+    Sync tools stay sync so pydantic-ai runs them in a worker thread, where
+    Django's ORM is safe to call. Only async tools are awaited.
+    """
+    # The tool is constructed per call so it sees this run's instance.
+    if _is_async_tool(tool_cls):
+
+        async def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
+            return _tool_output(await tool_cls(ctx.deps).call_async(**kwargs))
+
+    else:
+
+        def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
+            return _tool_output(tool_cls(ctx.deps)(**kwargs))
 
     tool_func.__name__ = tool_cls.name
     tool_func.__qualname__ = tool_cls.name
     tool_func.__doc__ = tool_cls.description
 
+    # Always replace the **kwargs signature, even with no parameters: left in
+    # place, it advertises a schema that accepts any argument, and the tool
+    # then fails on whatever the model sends.
     params = _tool_signature(tool_cls)
-    if params:
-        tool_func.__signature__ = _with_ctx_signature(params)
-        tool_func.__annotations__ = {
-            param.name: param.annotation
-            for param in params
-            if param.annotation is not param.empty
-        } | {"ctx": RunContext[ModelAgentContext], "return": str}
+    tool_func.__signature__ = _with_ctx_signature(params)
+    tool_func.__annotations__ = {
+        param.name: param.annotation
+        for param in params
+        if param.annotation is not param.empty
+    } | {"ctx": RunContext[ModelAgentContext], "return": str}
 
     return Tool(
         tool_func,
@@ -273,21 +306,31 @@ def _tool_from_func(func: Callable) -> Tool:
     The method is unbound: it is called with the ``ModelAgent`` from
     ``ctx.deps.agent``, so the tool is not tied to one agent instance.
     """
-    import inspect
-
     sig = inspect.signature(func)
     # Drop `self` -- the agent is supplied from the run context instead.
     params = [p for name, p in sig.parameters.items() if name != "self"]
     param_names = [p.name for p in params]
 
-    def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
+    def call(ctx: RunContext[ModelAgentContext], kwargs: dict[str, Any]) -> Any:
         agent = ctx.deps.agent
         if agent is None:
             raise ValueError(
                 f"Tool {func.__name__!r} needs ModelAgentContext.agent to be set"
             )
         filtered = {k: v for k, v in kwargs.items() if k in param_names}
-        return str(func(agent, **filtered))
+        return func(agent, **filtered)
+
+    # Mirror the method: an async method gets an async wrapper that awaits it,
+    # a sync one stays sync so it runs in a worker thread.
+    if inspect.iscoroutinefunction(func):
+
+        async def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
+            return str(await call(ctx, kwargs))
+
+    else:
+
+        def tool_func(ctx: RunContext[ModelAgentContext], **kwargs: Any) -> str:
+            return str(call(ctx, kwargs))
 
     tool_func.__name__ = func.__name__
     tool_func.__qualname__ = func.__qualname__
@@ -354,7 +397,9 @@ class DjangoModelCapability(AbstractCapability[ModelAgentContext]):
 
     def schema_description(self) -> str:
         """Human-readable listing of the fields the agent can see."""
-        lines = [f"You have access to the following {self.model_class.__name__} fields:"]
+        lines = [
+            f"You have access to the following {self.model_class.__name__} fields:"
+        ]
         for field in self._fields():
             lines.append(f"  - {field.name}: {field_python_type(field)}")
         return "\n".join(lines)
@@ -586,7 +631,9 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
         self._history = _load_messages(memory.data.get("messages"))
         self._injected = False
 
-    async def before_model_request(self, ctx: RunContext[ModelAgentContext], request_context: Any) -> Any:
+    async def before_model_request(
+        self, ctx: RunContext[ModelAgentContext], request_context: Any
+    ) -> Any:
         """
         Prepend the stored conversation to this run's messages.
 
@@ -601,18 +648,27 @@ class DjangoMemoryCapability(AbstractCapability[ModelAgentContext]):
         if not self.include_history or self._injected or not self._history:
             return request_context
 
-        request_context.messages = [*self._history, *request_context.messages]
+        messages = [*self._history, *request_context.messages]
+        request_context.messages = messages.copy()
+        # In current pydantic-ai, request_context.messages only affects this
+        # one request. Writing ctx.messages too keeps the history for the rest of
+        # the run and in all_messages(), which after_run saves.
+        ctx.messages[:] = messages
         self._injected = True
         return request_context
 
-    async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
+    async def after_run(
+        self, ctx: RunContext[ModelAgentContext], *, result: Any
+    ) -> Any:
         from asgiref.sync import sync_to_async
 
         if self._memory is None:
             return result
 
         messages = list(result.all_messages())
-        self._memory.data["messages"] = _dump_messages(_trim(messages, self.max_history))
+        self._memory.data["messages"] = _dump_messages(
+            _trim(messages, self.max_history)
+        )
 
         # Kept for anything still reading the old text shape.
         prompt = ctx.prompt
@@ -729,8 +785,6 @@ class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
         usage = getattr(result, "usage", None)
         if usage is None:
             return {}
-        if callable(usage):
-            usage = usage()
 
         fields = (
             "input_tokens",
@@ -746,7 +800,9 @@ class DjangoAuditCapability(AbstractCapability[ModelAgentContext]):
             if isinstance(value := getattr(usage, name, None), int)
         }
 
-    async def after_run(self, ctx: RunContext[ModelAgentContext], *, result: Any) -> Any:
+    async def after_run(
+        self, ctx: RunContext[ModelAgentContext], *, result: Any
+    ) -> Any:
         if self._before is None:
             return result
 
